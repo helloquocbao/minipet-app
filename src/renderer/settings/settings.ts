@@ -1,0 +1,418 @@
+import { PetListItem } from '../../shared/types/pet.types';
+import { UserSettings } from '../../shared/types/settings.types';
+import { translations, Language } from '../../shared/i18n/translations';
+import { INTERACTION } from '../../shared/constants';
+
+// --- State Management ---
+let cachedPetList: PetListItem[] = [];
+let currentSettings: UserSettings | null = null;
+let lastSettingsJson = '';
+const thumbnailCache = new Map<string, string>();
+let isInitialized = false;
+
+// --- Global Throttled Toast ---
+let lastToastMessage = '';
+let lastToastTime = 0;
+
+function showToast(message: string, type: 'success' | 'error' = 'success'): void {
+  const now = Date.now();
+  if (message === lastToastMessage && now - lastToastTime < 2000) return;
+  
+  lastToastMessage = message;
+  lastToastTime = now;
+
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visible'));
+
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => {
+      toast.remove();
+      if (lastToastMessage === message) lastToastMessage = '';
+    }, 300);
+  }, 3000);
+}
+
+/**
+ * Main initialization function for the settings UI.
+ */
+export async function initSettings(): Promise<void> {
+  if (isInitialized) return;
+  isInitialized = true;
+  
+  console.log('[Settings] Initializing stable settings...');
+  const { setupElectronShim } = await import('../../lib/electron-shim');
+  setupElectronShim();
+
+  const api = (window as any).electronAPI;
+  if (!api) return;
+
+  try {
+    const [pets, settings] = await Promise.all([
+      api.getPetList(),
+      api.getSettings()
+    ]);
+
+    cachedPetList = pets;
+    currentSettings = settings;
+    lastSettingsJson = JSON.stringify(settings);
+
+    // Initial Sync
+    refreshUI();
+    setupGlobalEventListeners();
+    setupTabs();
+    setupPomodoro(settings.language || 'en');
+
+    // Unified settings update listener
+    api.onSettingsUpdate((data: any) => {
+      const updated = data.settings;
+      const updatedJson = JSON.stringify(updated);
+      if (updatedJson === lastSettingsJson) return;
+
+      const old = currentSettings;
+      currentSettings = updated;
+      lastSettingsJson = updatedJson;
+
+      const langChanged = updated.language !== old?.language;
+      const petsChanged = JSON.stringify(updated.activePets) !== JSON.stringify(old?.activePets);
+
+      if (langChanged || petsChanged) {
+        requestAnimationFrame(() => refreshUI());
+      } else {
+        populateForm(updated);
+      }
+    });
+
+  } catch (err) {
+    console.error('Settings: Init failed:', err);
+  }
+}
+
+let refreshPending = false;
+function refreshUI() {
+  if (refreshPending || !currentSettings) return;
+  refreshPending = true;
+  
+  requestAnimationFrame(() => {
+    const lang = currentSettings!.language as Language || 'en';
+    applyTranslations(lang);
+    renderPetGallery(cachedPetList, currentSettings!);
+    renderActivePets(currentSettings!, cachedPetList);
+    populateForm(currentSettings!);
+    refreshPending = false;
+  });
+}
+
+function applyTranslations(lang: Language): void {
+  const t = translations[lang];
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n') as string;
+    if (t[key]) el.textContent = t[key];
+  });
+}
+
+function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
+  const gallery = document.getElementById('pet-gallery');
+  if (!gallery) return;
+
+  const activeSlugs = new Set(settings.activePets.map(p => p.slug));
+  const t = translations[settings.language as Language || 'en'];
+  const fragment = document.createDocumentFragment();
+
+  for (const pet of pets) {
+    if (pet.thumbnailPath && !thumbnailCache.has(pet.slug)) {
+      thumbnailCache.set(pet.slug, pet.thumbnailPath);
+    }
+
+    const isSpawned = activeSlugs.has(pet.slug);
+    const card = document.createElement('div');
+    card.className = `pet-card ${isSpawned ? 'active' : ''}`;
+    card.dataset.slug = pet.slug;
+    card.dataset.spawned = isSpawned ? 'true' : 'false';
+
+    const thumb = document.createElement('div');
+    thumb.className = 'pet-thumb';
+    thumb.style.backgroundImage = `url('${thumbnailCache.get(pet.slug) || pet.thumbnailPath}')`;
+
+    const name = document.createElement('div');
+    name.className = 'pet-name';
+    name.textContent = pet.displayName;
+
+    if (!pet.isDefault) {
+      const delBtn = document.createElement('div');
+      delBtn.className = 'delete-pet-btn';
+      delBtn.innerHTML = '×';
+      delBtn.dataset.action = 'delete';
+      delBtn.title = t.deletePet || 'Delete';
+      card.appendChild(delBtn);
+    }
+
+    card.appendChild(thumb);
+    card.appendChild(name);
+    fragment.appendChild(card);
+  }
+
+  gallery.innerHTML = '';
+  gallery.appendChild(fragment);
+}
+
+function renderActivePets(settings: UserSettings, pets: PetListItem[]) {
+  const container = document.getElementById('active-pets-list');
+  if (!container) return;
+
+  if (settings.activePets.length === 0) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'flex';
+  const fragment = document.createDocumentFragment();
+  const t = translations[settings.language as Language || 'en'];
+
+  for (const instance of settings.activePets) {
+    const petType = pets.find(p => p.slug === instance.slug);
+    if (!petType) continue;
+
+    const item = document.createElement('div');
+    item.className = 'active-pet-item';
+    
+    const thumb = document.createElement('div');
+    thumb.className = 'mini-thumb';
+    thumb.style.backgroundImage = `url('${thumbnailCache.get(petType.slug) || petType.thumbnailPath}')`;
+
+    const name = document.createElement('span');
+    name.className = 'instance-name';
+    name.textContent = petType.displayName;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-instance-btn';
+    removeBtn.innerHTML = '×';
+    removeBtn.dataset.instanceId = instance.id;
+    removeBtn.dataset.action = 'remove';
+    removeBtn.title = t.removePet;
+
+    if (settings.activePets.length <= 1) removeBtn.style.display = 'none';
+
+    item.appendChild(thumb);
+    item.appendChild(name);
+    item.appendChild(removeBtn);
+    fragment.appendChild(item);
+  }
+
+  container.innerHTML = '';
+  container.appendChild(fragment);
+}
+
+function setupGlobalEventListeners() {
+  const api = (window as any).electronAPI;
+  
+  document.getElementById('pet-gallery')?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const card = target.closest('.pet-card') as HTMLElement;
+    if (!card || !currentSettings) return;
+
+    const slug = card.dataset.slug!;
+    const isSpawned = card.dataset.spawned === 'true';
+    const pet = cachedPetList.find(p => p.slug === slug);
+    if (!pet) return;
+
+    if (target.classList.contains('delete-pet-btn')) {
+      e.stopPropagation();
+      const t = translations[currentSettings.language as Language || 'en'];
+      if (confirm(`${t.deletePet || 'Delete'} ${pet.displayName}?`)) {
+        cachedPetList = await api.deletePet(slug);
+        thumbnailCache.delete(slug);
+        refreshUI();
+      }
+      return;
+    }
+
+    try {
+      if (isSpawned) {
+        const instance = currentSettings.activePets.find(ap => ap.slug === slug);
+        if (instance) await api.removePet(instance.id);
+      } else {
+        const max = (INTERACTION as any).MAX_ACTIVE_PETS || 5;
+        if (currentSettings.activePets.length >= max) {
+          showToast(translations[currentSettings.language as Language || 'en'].maxPetsReached, 'error');
+          return;
+        }
+        card.classList.add('active');
+        await api.spawnPet(slug);
+      }
+    } catch (err: any) {
+      showToast(err.toString(), 'error');
+      refreshUI();
+    }
+  });
+
+  document.getElementById('active-pets-list')?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    if (target.dataset.action === 'remove' && target.dataset.instanceId) {
+      await api.removePet(target.dataset.instanceId);
+    }
+  });
+
+  const langSelect = document.getElementById('language-select') as HTMLSelectElement;
+  langSelect?.addEventListener('change', () => api.updateSettings({ language: langSelect.value }));
+
+  const scaleRange = document.getElementById('scale-range') as HTMLInputElement;
+  const scaleValue = document.getElementById('scale-value') as HTMLElement;
+  let scaleDebounce: any = null;
+  scaleRange?.addEventListener('input', () => {
+    const val = parseFloat(scaleRange.value);
+    scaleValue.textContent = `${val.toFixed(1)}x`;
+    if (scaleDebounce) clearTimeout(scaleDebounce);
+    scaleDebounce = setTimeout(() => api.updateSettings({ scale: val }), 150);
+  });
+
+  document.getElementById('walking-toggle')?.addEventListener('change', (e) => {
+    api.updateSettings({ enableWalking: (e.target as HTMLInputElement).checked });
+  });
+
+  document.getElementById('startup-toggle')?.addEventListener('change', (e) => {
+    api.updateSettings({ launchAtStartup: (e.target as HTMLInputElement).checked });
+  });
+
+  document.getElementById('import-btn-main')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('import-menu')?.classList.toggle('visible');
+  });
+
+  document.getElementById('import-file-item')?.addEventListener('click', async () => {
+    try {
+      if (await api.importPet()) {
+        showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
+        cachedPetList = await api.getPetList();
+        refreshUI();
+      }
+    } catch (err: any) { showToast(err.toString(), 'error'); }
+  });
+
+  document.getElementById('import-folder-item')?.addEventListener('click', async () => {
+    try {
+      if (await api.importFolder()) {
+        showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
+        cachedPetList = await api.getPetList();
+        refreshUI();
+      }
+    } catch (err: any) { showToast(err.toString(), 'error'); }
+  });
+
+  document.getElementById('ping-pet-btn')?.addEventListener('click', () => api.pingPet());
+
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('import-menu');
+    if (menu?.classList.contains('visible') && !document.getElementById('import-btn-main')?.contains(e.target as Node)) {
+      menu.classList.remove('visible');
+    }
+  });
+}
+
+function populateForm(settings: UserSettings): void {
+  const langSelect = document.getElementById('language-select') as HTMLSelectElement;
+  const scaleRange = document.getElementById('scale-range') as HTMLInputElement;
+  const scaleValue = document.getElementById('scale-value') as HTMLElement;
+  const walkingToggle = document.getElementById('walking-toggle') as HTMLInputElement;
+  const startupToggle = document.getElementById('startup-toggle') as HTMLInputElement;
+
+  if (langSelect) langSelect.value = settings.language || 'en';
+  if (scaleRange) {
+    scaleRange.value = (settings.scale || 1.0).toString();
+    scaleValue.textContent = `${(settings.scale || 1.0).toFixed(1)}x`;
+  }
+  if (walkingToggle) walkingToggle.checked = settings.enableWalking !== false;
+  if (startupToggle && navigator.userAgent.indexOf('Mac') === -1) {
+    startupToggle.checked = settings.launchAtStartup || false;
+  }
+}
+
+function setupTabs(): void {
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panels = document.querySelectorAll('.tab-panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      panels.forEach(p => {
+        p.classList.remove('active');
+        if (p.id === `tab-${target}`) p.classList.add('active');
+      });
+    });
+  });
+}
+
+async function setupPomodoro(lang: Language): Promise<void> {
+  const api = (window as any).electronAPI;
+  const focusInput = document.getElementById('pomo-focus-time') as HTMLInputElement;
+  const breakInput = document.getElementById('pomo-break-time') as HTMLInputElement;
+  const display = document.getElementById('pomo-display')!;
+  const status = document.getElementById('pomo-status')!;
+  const startBtn = document.getElementById('pomo-start-btn')!;
+  const pauseBtn = document.getElementById('pomo-pause-btn')!;
+  
+  if (!focusInput || !breakInput) return;
+
+  let isEditing = false;
+  focusInput.addEventListener('focus', () => isEditing = true);
+  focusInput.addEventListener('blur', () => isEditing = false);
+  breakInput.addEventListener('focus', () => isEditing = true);
+  breakInput.addEventListener('blur', () => isEditing = false);
+
+  const updateUI = (state: any, currentLang: string) => {
+    if (!state) return;
+    const minutes = Math.floor((state.timeLeft || 0) / 60);
+    const seconds = (state.timeLeft || 0) % 60;
+    display.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    if (!isEditing) {
+      if (state.focusMinutes) focusInput.value = state.focusMinutes.toString();
+      if (state.breakMinutes) breakInput.value = state.breakMinutes.toString();
+    }
+
+    const t = translations[currentLang as Language] || translations['en'];
+    status.className = `status-tag ${state.status} active`;
+    status.textContent = state.status === 'idle' 
+      ? (state.isWorkSession ? t.statusNextFocus : t.statusNextBreak)
+      : (state.status === 'focus' ? t.statusFocus : t.statusBreak);
+
+    startBtn.style.display = state.status === 'idle' ? 'inline-block' : 'none';
+    pauseBtn.style.display = state.status === 'idle' ? 'none' : 'inline-block';
+    if (state.status === 'idle') startBtn.textContent = state.isWorkSession ? t.startFocus : t.startBreak;
+    
+    focusInput.disabled = state.status !== 'idle';
+    breakInput.disabled = state.status !== 'idle';
+  };
+
+  api.onPomoTick((state: any) => updateUI(state, currentSettings?.language || 'en'));
+  
+  startBtn.addEventListener('click', () => {
+    api.startPomo(parseInt(focusInput.value) || 25, parseInt(breakInput.value) || 5);
+  });
+
+  pauseBtn.addEventListener('click', () => api.pausePomo());
+  document.getElementById('pomo-reset-btn')?.addEventListener('click', () => api.resetPomo());
+  document.getElementById('pomo-standard-btn')?.addEventListener('click', () => api.updatePomoConfig(25, 5));
+
+  const updateConfig = () => {
+    const f = parseInt(focusInput.value);
+    const b = parseInt(breakInput.value);
+    if (!isNaN(f) && !isNaN(b)) api.updatePomoConfig(f, b);
+  };
+  focusInput.addEventListener('input', updateConfig);
+  breakInput.addEventListener('input', updateConfig);
+
+  const initial = await api.getPomoState();
+  if (initial) updateUI(initial, lang);
+}
+
+document.addEventListener('DOMContentLoaded', initSettings);

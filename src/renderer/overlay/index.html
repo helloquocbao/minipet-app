@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiniPet Overlay</title>
+    <link rel="stylesheet" href="./overlay.css" />
+  </head>
+  <body>
+    <!-- Bong bóng lời thoại -->
+    <div id="speech-bubble" class="speech-bubble"></div>
+
+    <!-- Canvas cho pet animation -->
+    <canvas id="pet-canvas" width="192" height="208"></canvas>
+
+    <!-- Debug overlay (toggle với phím D) -->
+    <div id="debug-overlay"></div>
+
+    <!-- Notification sign (ẩn mặc định, hiện khi có notify) -->
+    <div id="notify-sign" class="notify-sign hidden">
+      <div class="notify-app"></div>
+      <div class="notify-title"></div>
+      <div class="notify-body"></div>
+    </div>
+
+    <script type="module" src="./overlay.ts"></script>
+  </body>
+</html>

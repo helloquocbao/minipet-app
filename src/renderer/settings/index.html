@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiniPet Settings</title>
+    <link rel="stylesheet" href="settings.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="settings-container">
+      <div id="toast-container" class="toast-container"></div>
+      <header class="settings-header">
+        <h1 data-i18n="settingsTitle">MiniPet Settings</h1>
+        <p class="subtitle" data-i18n="subtitle">Customize your desktop companion</p>
+      </header>
+
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="pets">
+          <span class="tab-icon">🐾</span>
+          <span data-i18n="activePets">Pets</span>
+        </button>
+        <button class="tab-btn" data-tab="config">
+          <span class="tab-icon">⚙️</span>
+          <span data-i18n="preferences">Configuration</span>
+        </button>
+      </nav>
+
+      <div class="tab-content">
+        <!-- Tab 1: Pet Management -->
+        <div id="tab-pets" class="tab-panel active">
+          <!-- Active Pets (Multi-Pet Management) -->
+          <section class="section">
+            <h2 data-i18n="activePets">Active Pets</h2>
+            <div id="active-pets-list" class="active-pets-list">
+              <!-- Populated by JS -->
+            </div>
+          </section>
+
+          <!-- Pet Selection -->
+          <section class="section">
+            <div class="section-header-row">
+              <h2 data-i18n="choosePet">Choose Your Pet</h2>
+              <div class="gallery-actions">
+                <div class="import-dropdown">
+                  <button id="import-btn-main" class="import-btn" data-i18n="importPet">+ Import Pet</button>
+                  <div id="import-menu" class="import-menu">
+                    <button id="import-file-item" class="menu-item">
+                      <span class="menu-icon">📄</span>
+                      <div class="menu-text">
+                        <span class="menu-title">Import File</span>
+                        <span class="menu-desc">.zip, .json, .png, .webp</span>
+                      </div>
+                    </button>
+                    <button id="import-folder-item" class="menu-item">
+                      <span class="menu-icon">📁</span>
+                      <div class="menu-text">
+                        <span class="menu-title">Import Folder</span>
+                        <span class="menu-desc">Select a local directory</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="pet-gallery" class="pet-gallery">
+              <!-- Populated by JS -->
+            </div>
+          </section>
+        </div>
+
+        <!-- Tab 2: Configuration -->
+        <div id="tab-config" class="tab-panel">
+          <!-- Pomodoro Timer -->
+          <section class="section">
+            <div class="section-header-row">
+              <h2 data-i18n="pomodoroTimer">Pomodoro Timer</h2>
+              <div id="pomo-status" class="status-tag">Ready</div>
+            </div>
+            <div class="pomo-container">
+              <div class="pomo-settings">
+                <div class="pomo-input-group">
+                  <label data-i18n="focus">Focus (min)</label>
+                  <input type="number" id="pomo-focus-time" value="25" min="1" max="120" />
+                </div>
+                <div class="pomo-input-group">
+                  <label data-i18n="break">Break (min)</label>
+                  <input type="number" id="pomo-break-time" value="5" min="1" max="60" />
+                </div>
+              </div>
+              <div class="pomo-timer" id="pomo-display">25:00</div>
+              <div class="pomo-controls">
+                <button id="pomo-start-btn" class="primary-btn" data-i18n="start">Start</button>
+                <button id="pomo-pause-btn" class="secondary-btn" style="display: none;" data-i18n="pause">Pause</button>
+                <button id="pomo-reset-btn" class="secondary-btn" data-i18n="reset">Reset</button>
+                <button id="pomo-standard-btn" class="secondary-btn" data-i18n="standard">Default</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Preferences -->
+          <section class="section">
+            <h2 data-i18n="preferences">Preferences</h2>
+            <div class="settings-form">
+              <!-- Language Selection -->
+              <div class="setting-item">
+                <label data-i18n="language">Language</label>
+                <select id="language-select" class="select-input">
+                  <option value="en">English</option>
+                  <option value="vi">Tiếng Việt</option>
+                  <option value="fr">Français</option>
+                  <option value="zh">中文</option>
+                  <option value="it">Italiano</option>
+                  <option value="ko">한국어</option>
+                </select>
+              </div>
+
+              <!-- Scale -->
+              <div class="setting-item">
+                <label data-i18n="petScale">Pet Scale</label>
+                <div class="range-container">
+                  <input type="range" id="scale-range" min="0.5" max="2" step="0.1" value="2" />
+                  <span id="scale-value">2.0x</span>
+                </div>
+              </div>
+
+              <!-- Enable Walking -->
+              <div class="setting-item">
+                <div class="setting-item-column">
+                  <label data-i18n="enableWalking">Enable Walking</label>
+                  <p class="setting-hint" data-i18n="walkingHint">Allow your pet to wander around the screen.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="walking-toggle" checked />
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <!-- Launch at Startup -->
+              <div class="setting-item">
+                <div class="setting-item-column">
+                  <label data-i18n="launchAtStartup">Launch at Startup</label>
+                  <p class="setting-hint" data-i18n="startupHint">Open MiniPet automatically when you log in.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="startup-toggle" />
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <!-- Interaction -->
+              <div class="setting-item">
+                <label data-i18n="interaction">Interaction</label>
+                <button id="ping-pet-btn" class="secondary-btn" data-i18n="pingPet">Ping Pet</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="settings.ts"></script>
+  </body>
+</html>
