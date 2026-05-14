@@ -469,10 +469,7 @@ impl PetManager {
     }
 }
 
-fn path_to_file_url(path: &PathBuf) -> String {
-    // Return absolute path string — frontend will call convertFileSrc() to get loadable URL
-    path.to_string_lossy().to_string()
-}
+
 
 async fn find_pet_json_dir(dir: &PathBuf) -> Option<PathBuf> {
     let mut entries = tokio::fs::read_dir(dir).await.ok()?;

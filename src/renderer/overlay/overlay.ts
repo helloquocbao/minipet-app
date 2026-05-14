@@ -15,6 +15,7 @@ let isExternalDragging = false;
 let lastIgnoreState = true;
 let controller: AnimationController;
 let stateMachine: PetStateMachine;
+let currentSpeechText = '';
 
 /**
  * Helper to pick a random item from an array using cryptographically strong random values
@@ -235,26 +236,37 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
 
   canvas.addEventListener('mousedown', e => {
     if (e.button === 0) {
+      e.preventDefault();
+      
+      // 1. Instant response: focus and pause autonomous movement
+      window.electronAPI.focus();
+      controller.pauseMovement(true);
+      
+      // 2. Native drag: buttery smooth and bypasses focus lag
+      // Some systems may need a manual fallback if startDragging fails
+      window.electronAPI.startDragging();
+      
       isDragging = true;
       wasDragged = false;
-      stateMachine.forceState('drag');
-      controller.pauseMovement(true);
-      controller.resetPosition();
+      startX = e.screenX;
+      startY = e.screenY;
       
-      // Ensure window is interactive during drag
+      // 3. UI state
+      stateMachine.forceState('drag');
       window.electronAPI.setIgnoreMouseEvents(false);
     }
   });
 
   window.addEventListener('mousemove', e => {
     if (isDragging) {
-      // Use movementX/Y for much smoother delta calculation
-      const dx = e.movementX;
-      const dy = e.movementY;
+      const dx = e.screenX - startX;
+      const dy = e.screenY - startY;
       
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         wasDragged = true;
         window.electronAPI.moveWindow(dx, dy);
+        startX = e.screenX;
+        startY = e.screenY;
       }
     }
   });
@@ -324,82 +336,41 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
   // we no longer need complex ignore logic which was causing focus issues.
   
   /**
-   * Drag-and-drop file eating handlers.
+   * Drag-and-drop file eating handlers using native Tauri events.
    */
-  const handleDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    isExternalDragging = true;
-    stateMachine.forceState('jump');
-  };
-
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'copy';
-    }
-  };
-
-  const handleDragLeave = (e: DragEvent) => {
-    // Only restore if cursor truly left the window bounds
-    if (e.clientX <= 0 || e.clientY <= 0 ||
-        e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+  window.electronAPI.onDragDrop(async (type: string, paths: string[]) => {
+    if (type === 'enter') {
+      isExternalDragging = true;
+      stateMachine.forceState('jump');
+    } else if (type === 'leave') {
       isExternalDragging = false;
       stateMachine.transitionTo('idle');
-    }
-  };
+    } else if (type === 'drop') {
+      isExternalDragging = false;
 
-  const handleDrop = async (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    isExternalDragging = false;
-
-    const files = e.dataTransfer?.files;
-
-    if (!files || files.length === 0) {
-      stateMachine.transitionTo('idle');
-      return;
-    }
-
-    const t = translations[currentLanguage];
-    stateMachine.forceState('eat');
-    showSpeech(pickUniqueRandom(t.eating));
-
-    try {
-      const allPaths: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        let filePath = window.electronAPI.getPathForFile(file);
-        if (!filePath && (file as any).path) {
-          filePath = (file as any).path;
-        }
-        if (filePath) {
-          allPaths.push(filePath);
-        }
+      if (!paths || paths.length === 0) {
+        stateMachine.transitionTo('idle');
+        return;
       }
 
-      if (allPaths.length > 0) {
-        const result: any = await window.electronAPI.eatFile(allPaths);
+      const t = translations[currentLanguage];
+      stateMachine.forceState('eat');
+      showSpeech(pickUniqueRandom(t.eating));
+
+      try {
+        const result: any = await window.electronAPI.eatFile(paths);
         if (result && !result.success) {
           showSpeech(pickUniqueRandom(t.hello));
         }
+      } catch (err) {
+        console.error('Overlay: Failed to eat file:', err);
+      } finally {
+        setTimeout(() => {
+          stateMachine.transitionTo('idle');
+        }, 1000);
       }
-    } catch (err) {
-      console.error('Overlay: Failed to eat file:', err);
-    } finally {
-      // Do NOT force click-through here — mouseleave handles it naturally
-      // when the cursor leaves, keeping the window ready for another drag.
-      setTimeout(() => {
-        stateMachine.transitionTo('idle');
-      }, 1000);
     }
-  };
-
-  window.addEventListener('dragenter', handleDragEnter);
-  window.addEventListener('dragover', handleDragOver);
-  window.addEventListener('dragleave', handleDragLeave);
-  window.addEventListener('drop', handleDrop);
+  });
 }
 
 /**
@@ -450,6 +421,7 @@ async function syncWindowSize(): Promise<void> {
 function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT): void {
   if (speechTimeout) clearTimeout(speechTimeout);
   isSpeechVisible = true;
+  currentSpeechText = text;
   
   // Use separate speech window
   updateSpeechOverlay(text, true);
@@ -465,6 +437,7 @@ function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION
  */
 function hideSpeech(): void {
   isSpeechVisible = false;
+  currentSpeechText = '';
   updateSpeechOverlay('', false);
 
   if (speechTimeout) {
@@ -537,19 +510,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Real-time Speech Sync Loop ---
-let lastSyncX = 0;
-let lastSyncY = 0;
-
-function syncSpeechLoop() {
-  if (isSpeechVisible) {
-    const pos = (window.electronAPI as any).getLogicalPosition?.() || { x: window.screenX, y: window.screenY };
-    if (pos.x !== lastSyncX || pos.y !== lastSyncY) {
-      updateSpeechOverlay('', true);
-      lastSyncX = pos.x;
-      lastSyncY = pos.y;
-    }
+// --- Real-time Speech Sync (Event Driven) ---
+window.electronAPI.onWindowMoved((x: number, y: number) => {
+  if (isSpeechVisible && currentSpeechText) {
+    updateSpeechOverlay(currentSpeechText, true);
   }
-  requestAnimationFrame(syncSpeechLoop);
-}
-requestAnimationFrame(syncSpeechLoop);
+});
+

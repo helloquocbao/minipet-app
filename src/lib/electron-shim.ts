@@ -175,6 +175,15 @@ export function setupElectronShim() {
     onPomoFinished: (cb: (sessionType: string) => void) => { listen('pomo:finished', (e) => cb(e.payload as string)); },
     onPetSay: (cb: (text: string) => void) => { listen('pet:say', (e) => cb(e.payload as string)); },
     onSomeoneSpeaking: (cb: () => void) => { listen('pet:someone-speaking', () => cb()); },
+    onWindowMoved: (cb: (x: number, y: number) => void) => {
+      win.onMoved((event) => {
+        const pos = event.payload;
+        const dpr = window.devicePixelRatio || 1;
+        cachedX = pos.x / dpr;
+        cachedY = pos.y / dpr;
+        cb(cachedX, cachedY);
+      });
+    },
 
     // --- Pomodoro ---
     startPomo: (focus: number, breakMin: number) => invoke('pomo_start', { focus, breakMin }),
@@ -186,6 +195,14 @@ export function setupElectronShim() {
     // --- File Eating ---
     eatFile: (paths: string[]) => invoke('eat_files', { paths }),
     getPathForFile: (file: File) => (file as any).path || '',
+
+    onDragDrop: (cb: (type: string, paths: string[]) => void) => {
+      win.onDragDropEvent((event) => {
+        if (event.payload.type === 'enter') cb('enter', event.payload.paths);
+        else if (event.payload.type === 'leave') cb('leave', []);
+        else if (event.payload.type === 'drop') cb('drop', event.payload.paths);
+      });
+    },
 
     // --- Broadcast ---
     pingPet: () => emit('pet:ping'),

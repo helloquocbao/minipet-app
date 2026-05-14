@@ -1,6 +1,7 @@
 use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
+#[allow(dead_code)]
 pub fn get_active_app() -> Option<String> {
     if cfg!(target_os = "macos") {
         let output = Command::new("osascript")
@@ -19,6 +20,7 @@ pub fn get_active_app() -> Option<String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_browser_tab(browser: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
         let script = match browser {
@@ -51,6 +53,7 @@ pub fn get_browser_tab(browser: &str) -> Option<String> {
 }
 
 /// Emits a "pet:say" event to all overlay windows with a context-aware comment
+#[allow(dead_code)]
 pub fn emit_context_comment(app: &AppHandle, text: &str) {
     let _ = app.emit("pet:say", text);
 }

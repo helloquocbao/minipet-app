@@ -53,6 +53,8 @@ export interface ElectronAPI {
   // --- Speech synchronization ---
   notifySpeaking: () => void;
   onSomeoneSpeaking: (cb: () => void) => void;
+  onWindowMoved: (cb: (x: number, y: number) => void) => void;
+  onDragDrop: (cb: (type: string, paths: string[]) => void) => void;
 }
 
 declare global {

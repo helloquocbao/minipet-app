@@ -26,8 +26,4 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn close(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window(LABEL) {
-        let _ = win.close();
-    }
-}
+

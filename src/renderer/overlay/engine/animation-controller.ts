@@ -16,6 +16,7 @@ export class AnimationController {
   private scale: number = 1.0;
   private direction: number = 1; // 1: Right, -1: Left
   private movementPaused: boolean = false;
+  private lastSaveTime: number = 0;
 
   // Multi-Pet: Targets for the "chasing" behavior
   private targetX: number | null = null;
@@ -153,10 +154,11 @@ export class AnimationController {
           const screenW = window.screen.availWidth;
 
           if (this.logicalX === null) this.logicalX = winX;
+          const lx = this.logicalX as number;
 
           // Multi-Pet: Handle chasing behavior
           if (this.targetX !== null) {
-            const centerX = this.logicalX + winW / 2;
+            const centerX = lx + winW / 2;
             if (this.targetX < centerX - 50) {
               this.direction = -1;
             } else if (this.targetX > centerX + 50) {
@@ -165,10 +167,10 @@ export class AnimationController {
               this.targetX = null;
             }
           } else {
-            if (this.direction === -1 && this.logicalX <= 0) {
+            if (this.direction === -1 && lx <= 0) {
               this.direction = 1;
               this.accumulatedX = 0;
-            } else if (this.direction === 1 && this.logicalX + winW >= screenW) {
+            } else if (this.direction === 1 && lx + winW >= screenW) {
               this.direction = -1;
               this.accumulatedX = 0;
             }
@@ -179,14 +181,16 @@ export class AnimationController {
 
           if (Math.abs(actualMoveX) >= 1) {
             window.electronAPI.moveWindow(actualMoveX, 0);
-            this.logicalX += actualMoveX;
+            this.logicalX = lx + actualMoveX;
             this.accumulatedX -= actualMoveX;
 
             // CRITICAL: We only update the X coordinate in the backend.
-            // We do NOT pass a Y coordinate here (or pass undefined) to ensure
-            // the backend keeps the original "home" Y position.
-            // This prevents the pet from permanently "floating" if it was speaking while walking.
-            window.electronAPI.savePosition(this.instanceId, this.logicalX, undefined);
+            // Throttle savePosition to avoid flooding IPC during walk.
+            const now = performance.now();
+            if (now - this.lastSaveTime > 1000) {
+              window.electronAPI.savePosition(this.instanceId, this.logicalX, undefined);
+              this.lastSaveTime = now;
+            }
           }
         }
       }

@@ -24,6 +24,7 @@ pub fn create(app: &AppHandle, instance_id: &str, x: f64, y: f64) -> Result<(), 
         .transparent(true)
         .decorations(false)
         .always_on_top(true)
+        .accept_first_mouse(true)
         .skip_taskbar(true)
         .resizable(false)
         .shadow(false)
