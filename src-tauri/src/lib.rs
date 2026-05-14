@@ -118,6 +118,11 @@ pub fn run() {
             commands::toggle_visibility,
             commands::exit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |app_handle, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                let _ = crate::window::settings::open(app_handle);
+            }
+        });
 }
