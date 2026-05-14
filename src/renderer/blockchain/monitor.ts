@@ -6,7 +6,7 @@ export class SuiMonitor {
   private lastEventCursor: any = null;
   private lastBalance: string | null = null;
   private pollInterval: any = null;
-  private packageId: string = '0x9953930b201460e1d5a71a06708fc7347952a1228221805f32be97e93892705a';
+  private packageId: string = '0x8bf42dbb049c416868bec9237b1250af343e63b69837b25af2b0bf2ad0832040';
 
   constructor() {
     this.init();
@@ -151,24 +151,24 @@ export class SuiMonitor {
     const api = (window as any).electronAPI;
     const type = event.type;
     const parsed: any = event.parsedJson;
-    const amount = parsed.amount ? Number(parsed.amount) : 0;
+    const amount = parsed.amount || parsed.fee || 0;
     
     if (type.includes('MessageEvent')) {
-      if (parsed.recipient === this.address && parsed.text) {
+      if (parsed.recipient === this.address && parsed.message) {
         api.broadcastPetEvent('blockchain:event', {
           event_type: 'message',
-          message: parsed.text,
-          pet_slug: event.sender.substring(0, 6) + '...',
-          amount: amount,
+          message: parsed.message,
+          pet_slug: parsed.pet_slug || 'Someone',
+          amount: Number(amount),
           coin_type: 'SUI'
         });
       }
     } else if (type.includes('BonkEvent')) {
-      if (parsed.target_pet_id) {
+      if (parsed.target === this.address) {
          api.broadcastPetEvent('blockchain:event', {
           event_type: 'bonk',
-          pet_slug: event.sender.substring(0, 6) + '...',
-          amount: amount,
+          pet_slug: parsed.pet_slug || 'Someone',
+          amount: Number(amount),
           coin_type: 'SUI'
         });
       }
