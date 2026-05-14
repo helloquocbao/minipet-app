@@ -142,6 +142,8 @@ export function setupElectronShim() {
     toggleVisibility: () => invoke('toggle_visibility'),
     exitApp: () => invoke('exit_app'),
     openSettings: () => invoke('open_settings'),
+    open_url: (url: string) => invoke('open_url', { url }),
+    suiRpcCall: (method: string, params: any[], rpc_url: string) => invoke('sui_rpc_call', { method, params, rpcUrl: rpc_url }),
     savePosition: (instanceId: string, x?: number, y?: number) => {
       const dpr = window.devicePixelRatio || 1;
       // Heuristic: if x/y are missing or seem physical (> screen width), use cache or convert.
@@ -184,6 +186,7 @@ export function setupElectronShim() {
         cb(cachedX, cachedY);
       });
     },
+    onBlockchainEvent: (cb: (event: any) => void) => { listen('blockchain:event', (e) => cb(e.payload)); },
 
     // --- Pomodoro ---
     startPomo: (focus: number, breakMin: number) => invoke('pomo_start', { focus, breakMin }),
@@ -209,5 +212,8 @@ export function setupElectronShim() {
     startAlarm: () => invoke('broadcast_pet_event', { event: 'pet:start-alarm', payload: {} }),
     stopAlarm: () => invoke('broadcast_pet_event', { event: 'pet:stop-alarm', payload: {} }),
     notifySpeaking: () => invoke('broadcast_pet_event', { event: 'pet:someone-speaking', payload: {} }),
+    broadcastPetEvent: (event: string, payload: any) => 
+      invoke('broadcast_pet_event', { event, payload })
+        .catch(err => console.error(`[Shim] broadcastPetEvent failed for ${event}:`, err)),
   };
 }

@@ -84,6 +84,10 @@ pub fn run() {
                         Err(e) => eprintln!("[MiniPet] Window create failed: {}", e),
                     }
                 }
+
+                // Start SUI Blockchain Monitor (Disabled - Moving to Frontend TS SDK)
+                // let monitor = blockchain::SuiMonitor::new(handle);
+                // monitor.start_monitoring().await;
             });
 
             // Create system tray
@@ -103,6 +107,8 @@ pub fn run() {
             commands::save_position,
             commands::set_drag_mode,
             commands::open_settings,
+            commands::open_url,
+            commands::sui_rpc_call,
             commands::eat_files,
             commands::import_pet,
             commands::delete_pet,

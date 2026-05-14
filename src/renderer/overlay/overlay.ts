@@ -3,6 +3,9 @@ import { AnimationController } from './engine/animation-controller';
 import { PetStateMachine } from './engine/pet-state-machine';
 import { PETDEX_SPRITE, INTERACTION } from '../../shared/constants';
 import { translations, Language } from '../../shared/i18n/translations';
+import { SuiMonitor } from '../blockchain/monitor';
+import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 let statusAlarming = false;
 let currentScale = 1.0;
@@ -16,6 +19,7 @@ let lastIgnoreState = true;
 let controller: AnimationController;
 let stateMachine: PetStateMachine;
 let currentSpeechText = '';
+let suiMonitor: SuiMonitor | null = null;
 
 /**
  * Helper to pick a random item from an array using cryptographically strong random values
@@ -126,7 +130,7 @@ async function init(): Promise<void> {
     const delay = randomBuffer[0] % 1800; // 0 to 1.8s
     
     setTimeout(() => {
-      showSpeech(getRandomPingSpeech());
+      showSpeech(getRandomPingSpeech(), INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Ping');
     }, delay);
   });
 
@@ -153,7 +157,7 @@ async function init(): Promise<void> {
     setTimeout(() => {
       const choices = sessionType === 'focus' ? t.pomoFinishedWork : t.pomoFinishedBreak;
       const msg = pickUniqueRandom(choices);
-      if (msg) showSpeech(msg, INTERACTION.SPEECH_DURATION_LONG);
+      if (msg) showSpeech(msg, INTERACTION.SPEECH_DURATION_LONG, false, 'Pomo');
     }, delay);
   });
 
@@ -163,6 +167,7 @@ async function init(): Promise<void> {
   window.electronAPI.onSettingsUpdate(async (data: any) => {
     const { settings } = data;
     currentLanguage = settings.language || 'en';
+    console.log('[Overlay] Settings updated, language:', currentLanguage);
     
     // Find this instance's specific configuration
     const myInstance = settings.activePets.find((p: any) => p.id === instanceId);
@@ -213,7 +218,7 @@ async function init(): Promise<void> {
       // Final race-condition check
       const updatedTimeSinceLast = Date.now() - lastGlobalSpeechTime;
       if (updatedTimeSinceLast > 1000 && !isSpeechVisible) {
-        showSpeech(speechToSay);
+        showSpeech(speechToSay, INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Intel');
       }
     }, delay);
   });
@@ -223,6 +228,113 @@ async function init(): Promise<void> {
   });
 
   setupMouseInteraction(canvas, stateMachine);
+
+  // --- Master Election for Blockchain Monitor ---
+  setupMasterElection();
+
+  // --- Blockchain Events ---
+  window.electronAPI.onBlockchainEvent((event: any) => {
+    console.log('[Overlay] Blockchain event received:', event);
+    console.log('[Overlay] Current Language:', currentLanguage);
+    
+    const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+    const t = translations[lang];
+    console.log('[Overlay] Using translation keys:', Object.keys(t).slice(0, 5), '...');
+    console.log('[Overlay] Event type:', event.event_type);
+    const amountStr = (event.amount / 1000000000).toFixed(3);
+    
+    if (event.event_type === 'message') {
+      stateMachine.forceState('happy');
+      let msg = t.blockchainMessage || '{pet}: {message} (+{amount} {coin})';
+      msg = msg.replace('{pet}', event.pet_slug || 'Someone')
+               .replace('{message}', event.message || '')
+               .replace('{amount}', amountStr)
+               .replace('{coin}', event.coin_type || 'SUI');
+      console.log('[Overlay] Showing blockchain message:', msg);
+      showSpeech(msg, 7000, true, 'Blockchain:Message');
+    } else if (event.event_type === 'bonk') {
+      stateMachine.forceState('jump');
+      let msg = t.blockchainBonk || '{pet} bonked me! (-{amount} {coin})';
+      msg = msg.replace('{pet}', event.pet_slug || 'Someone')
+               .replace('{amount}', amountStr)
+               .replace('{coin}', event.coin_type || 'SUI');
+      console.log('[Overlay] Showing blockchain bonk:', msg);
+      showSpeech(msg, 5000, true, 'Blockchain:Bonk');
+    } else if (event.event_type === 'receive_coin') {
+      // If we just showed a message or bonk in this SAME tick, receive_coin should win
+      stateMachine.forceState('happy');
+      
+      const variations = t.blockchainReceiveCoin || [
+        `Wow! Just received {amount} {coin}! 🚀`
+      ];
+      
+      let randomMsg = variations[Math.floor(Math.random() * variations.length)];
+      randomMsg = randomMsg.replace('{amount}', amountStr)
+                           .replace('{coin}', event.coin_type || 'SUI');
+      
+      console.log('[Overlay] Showing blockchain receive:', randomMsg);
+      showSpeech(randomMsg, 8000, true, 'Blockchain:Receive');
+    } else if (event.event_type === 'send_coin') {
+      stateMachine.forceState('jump'); // Maybe a bit surprised/active
+      
+      const variations = t.blockchainSendCoin || [
+        `Sent {amount} {coin}. 👋`
+      ];
+      
+      let randomMsg = variations[Math.floor(Math.random() * variations.length)];
+      randomMsg = randomMsg.replace('{amount}', amountStr)
+                           .replace('{coin}', event.coin_type || 'SUI');
+      
+      console.log('[Overlay] Showing blockchain send:', randomMsg);
+      showSpeech(randomMsg, 6000, true, 'Blockchain:Send');
+    }
+  });
+
+  // --- Real-time Speech Sync (Event Driven) ---
+  window.electronAPI.onWindowMoved((x: number, y: number) => {
+    if (isSpeechVisible && currentSpeechText) {
+      updateSpeechOverlay(currentSpeechText, true);
+    }
+  });
+}
+
+/**
+ * Ensures only one pet window runs the SuiMonitor to stay within RPC rate limits.
+ * The window with the alphabetically lowest label is elected as Master.
+ */
+async function setupMasterElection() {
+  const checkMaster = async () => {
+    try {
+      const allWindows = await getAllWebviewWindows();
+      const overlayWindows = allWindows.filter(w => w.label.startsWith('overlay-'));
+      const sortedLabels = overlayWindows.map(w => w.label).sort();
+      const currentWin = getCurrentWebviewWindow();
+      const myLabel = currentWin.label;
+
+      if (myLabel === sortedLabels[0]) {
+        if (!suiMonitor) {
+          console.log(`[Overlay] ${myLabel} elected as Master. Starting SuiMonitor.`);
+          suiMonitor = new SuiMonitor();
+        }
+      } else {
+        if (suiMonitor) {
+          console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SuiMonitor.`);
+          // SuiMonitor currently doesn't have a destroy, but it will stop polling if we lose master status
+          // and we can null it out.
+          (suiMonitor as any).stopPolling?.();
+          suiMonitor = null;
+        }
+      }
+    } catch (err) {
+      console.error('[Overlay] Master election failed:', err);
+    }
+  };
+
+  // Initial check
+  await checkMaster();
+  
+  // Re-elect every 10 seconds in case windows are closed/opened
+  setInterval(checkMaster, 10000);
 }
 
 /**
@@ -355,12 +467,12 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
 
       const t = translations[currentLanguage];
       stateMachine.forceState('eat');
-      showSpeech(pickUniqueRandom(t.eating));
+      showSpeech(pickUniqueRandom(t.eating), INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Eat');
 
       try {
         const result: any = await window.electronAPI.eatFile(paths);
         if (result && !result.success) {
-          showSpeech(pickUniqueRandom(t.hello));
+          showSpeech(pickUniqueRandom(t.hello), INTERACTION.SPEECH_DURATION_DEFAULT, false, 'EatError');
         }
       } catch (err) {
         console.error('Overlay: Failed to eat file:', err);
@@ -418,10 +530,19 @@ async function syncWindowSize(): Promise<void> {
 /**
  * Displays a speech bubble with the given text for a specific duration.
  */
-function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT): void {
+function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT, priority: boolean = false, source: string = 'unknown'): void {
+  console.log(`[Overlay] showSpeech from ${source}: "${text}" (priority: ${priority})`);
   if (speechTimeout) clearTimeout(speechTimeout);
+  if (!priority && isSpeechVisible) {
+    if ((window as any).isCurrentSpeechPriority) {
+      console.log('[Overlay] Skipping non-priority speech as priority speech is visible.');
+      return;
+    }
+  }
+
   isSpeechVisible = true;
   currentSpeechText = text;
+  (window as any).isCurrentSpeechPriority = priority;
   
   // Use separate speech window
   updateSpeechOverlay(text, true);
@@ -432,12 +553,10 @@ function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION
   speechTimeout = setTimeout(hideSpeech, duration);
 }
 
-/**
- * Hides the speech bubble.
- */
 function hideSpeech(): void {
   isSpeechVisible = false;
   currentSpeechText = '';
+  (window as any).isCurrentSpeechPriority = false;
   updateSpeechOverlay('', false);
 
   if (speechTimeout) {
@@ -450,9 +569,10 @@ function hideSpeech(): void {
  * Returns a random speech text for ping responses.
  */
 function getRandomPingSpeech(): string {
-  const t = translations[currentLanguage];
-  const options = t.pingResponses || [t.hello, '🐾', '❤️', '✨'];
-  return pickUniqueRandom(options);
+  const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+  const t = translations[lang];
+  const choices = Array.isArray(t.pingResponses) ? t.pingResponses : (Array.isArray(t.hello) ? t.hello : ['🐾', '❤️', '✨']);
+  return pickUniqueRandom(choices);
 }
 
 /**
@@ -471,7 +591,7 @@ function setupRandomSpeech(stateMachine: PetStateMachine): void {
         showSpeech('Zzz...');
       } else {
         const choices = t.randomSpeeches || ['🐾', '❤️', '✨'];
-        showSpeech(pickUniqueRandom(choices));
+        showSpeech(pickUniqueRandom(choices), INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Random');
       }
     }
   }, INTERACTION.RANDOM_SPEECH_INTERVAL);
@@ -510,10 +630,4 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Real-time Speech Sync (Event Driven) ---
-window.electronAPI.onWindowMoved((x: number, y: number) => {
-  if (isSpeechVisible && currentSpeechText) {
-    updateSpeechOverlay(currentSpeechText, true);
-  }
-});
 

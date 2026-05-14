@@ -199,6 +199,54 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
     crate::window::settings::open(&app)
 }
 
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("start")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sui_rpc_call(method: String, params: serde_json::Value, rpc_url: String) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params
+    });
+
+    let res = client.post(&rpc_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    Ok(json)
+}
+
 // --- File Eating ---
 
 #[tauri::command]

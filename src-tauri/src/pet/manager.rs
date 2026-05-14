@@ -42,12 +42,19 @@ pub struct UserSettings {
     pub last_y: Option<f64>,
     #[serde(default = "default_lang")]
     pub language: String,
+    #[serde(rename = "suiAddress", default)]
+    pub sui_address: String,
+    #[serde(rename = "suiRpcUrl", default = "default_sui_rpc")]
+    pub sui_rpc_url: String,
+    #[serde(rename = "suiEnabled", default)]
+    pub sui_enabled: bool,
 }
 
 fn default_position() -> String { "bottom-right".to_string() }
 fn default_scale() -> f64 { 1.0 }
 fn default_true() -> bool { true }
 fn default_lang() -> String { "en".to_string() }
+fn default_sui_rpc() -> String { "https://sui-testnet.public.blastapi.io".to_string() }
 
 impl Default for UserSettings {
     fn default() -> Self {
@@ -63,6 +70,9 @@ impl Default for UserSettings {
             last_x: None,
             last_y: None,
             language: "en".to_string(),
+            sui_address: "".to_string(),
+            sui_rpc_url: "https://sui-testnet.public.blastapi.io".to_string(),
+            sui_enabled: false,
         }
     }
 }
@@ -163,6 +173,7 @@ impl PetManager {
         let mut config = serde_json::to_value(&pet.manifest).ok()?;
         let obj = config.as_object_mut()?;
         obj.insert("instanceId".to_string(), serde_json::json!(instance.id));
+        obj.insert("slug".to_string(), serde_json::json!(instance.slug));
         obj.insert(
             "spritesheetPath".to_string(),
             serde_json::json!(pet.spritesheet_path.to_string_lossy().to_string()),
@@ -256,6 +267,21 @@ impl PetManager {
             if let Some(v) = obj.get("position") {
                 if let Some(s) = v.as_str() {
                     self.settings.position = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("suiEnabled") {
+                if let Some(b) = v.as_bool() {
+                    self.settings.sui_enabled = b;
+                }
+            }
+            if let Some(v) = obj.get("suiAddress") {
+                if let Some(s) = v.as_str() {
+                    self.settings.sui_address = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("suiRpcUrl") {
+                if let Some(s) = v.as_str() {
+                    self.settings.sui_rpc_url = s.to_string();
                 }
             }
         }

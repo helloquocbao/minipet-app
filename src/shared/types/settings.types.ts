@@ -36,6 +36,10 @@ export interface UserSettings {
   lastY: number | null;
   /** App display language */
   language: 'en' | 'vi' | 'fr' | 'zh' | 'it';
+  /** SUI Blockchain Integration */
+  suiAddress: string;
+  suiRpcUrl: string;
+  suiEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -50,4 +54,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   lastX: null,
   lastY: null,
   language: 'en',
+  suiAddress: '',
+  suiRpcUrl: 'https://sui-testnet.public.blastapi.io',
+  suiEnabled: false,
 };
