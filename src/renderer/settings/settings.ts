@@ -2,6 +2,7 @@ import { PetListItem } from '../../shared/types/pet.types';
 import { UserSettings } from '../../shared/types/settings.types';
 import { translations, Language } from '../../shared/i18n/translations';
 import { INTERACTION } from '../../shared/constants';
+import { SuiJsonRpcClient, getJsonRpcFullnodeUrl, JsonRpcHTTPTransport } from '@mysten/sui/jsonRpc';
 
 // --- State Management ---
 let cachedPetList: PetListItem[] = [];
@@ -9,6 +10,18 @@ let currentSettings: UserSettings | null = null;
 let lastSettingsJson = '';
 const thumbnailCache = new Map<string, string>();
 let isInitialized = false;
+
+const updateExplorerLink = (addr: string) => {
+  const link = document.getElementById('explorer-link') as HTMLAnchorElement;
+  if (link) {
+    if (addr && addr.startsWith('0x')) {
+      link.href = `https://testnet.suivision.xyz/account/${addr}`;
+      link.style.display = 'flex';
+    } else {
+      link.style.display = 'none';
+    }
+  }
+};
 
 // --- Global Throttled Toast ---
 let lastToastMessage = '';
@@ -282,6 +295,69 @@ function setupGlobalEventListeners() {
     api.updateSettings({ launchAtStartup: (e.target as HTMLInputElement).checked });
   });
 
+  // Automatically refresh UI on blockchain events (e.g. received money)
+  api.onBlockchainEvent((event: any) => {
+    console.log('[Settings] Blockchain event received:', event);
+    refreshSuiBalance();
+    refreshSuiAssets();
+    refreshSuiActivity();
+  });
+
+  document.getElementById('sui-enabled-toggle')?.addEventListener('change', async (e) => {
+    const enabled = (e.target as HTMLInputElement).checked;
+    await api.updateSettings({ suiEnabled: enabled });
+    updateSuiStatusUI(enabled);
+    if (enabled) {
+        // Wait a bit for the settings to propagate through the event listener
+        setTimeout(() => refreshSuiBalance(), 100);
+    }
+  });
+
+  const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
+  let suiAddrDebounce: any = null;
+  suiAddressInput?.addEventListener('input', () => {
+    if (suiAddrDebounce) clearTimeout(suiAddrDebounce);
+    suiAddrDebounce = setTimeout(async () => {
+        const addr = suiAddressInput.value.trim();
+        updateExplorerLink(addr);
+        await api.updateSettings({ suiAddress: addr });
+    }, 500);
+  });
+  document.getElementById('copy-address-btn')?.addEventListener('click', () => {
+    const val = suiAddressInput.value.trim();
+    if (val) {
+      navigator.clipboard.writeText(val);
+      showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
+    }
+  });
+  document.getElementById('check-wallet-btn')?.addEventListener('click', () => {
+    refreshSuiBalance();
+    refreshSuiAssets();
+    refreshSuiActivity();
+  });
+
+  const explorerLink = document.getElementById('explorer-link');
+  if (explorerLink) {
+    explorerLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const href = (explorerLink as HTMLAnchorElement).href;
+      if (href && href !== '#' && api.open_url) {
+        api.open_url(href);
+      }
+    });
+  }
+
+  document.getElementById('refresh-blockchain-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('refresh-blockchain-btn');
+    if (btn) btn.classList.add('spinning');
+    await Promise.all([
+      refreshSuiBalance(),
+      refreshSuiAssets(),
+      refreshSuiActivity()
+    ]);
+    setTimeout(() => btn?.classList.remove('spinning'), 600);
+  });
+
   document.getElementById('import-btn-main')?.addEventListener('click', (e) => {
     e.stopPropagation();
     document.getElementById('import-menu')?.classList.toggle('visible');
@@ -333,6 +409,206 @@ function populateForm(settings: UserSettings): void {
   if (startupToggle && navigator.userAgent.indexOf('Mac') === -1) {
     startupToggle.checked = settings.launchAtStartup || false;
   }
+
+  const suiToggle = document.getElementById('sui-enabled-toggle') as HTMLInputElement;
+  const suiAddr = document.getElementById('sui-address-input') as HTMLInputElement;
+
+  if (suiToggle) {
+    suiToggle.checked = settings.suiEnabled || false;
+    updateSuiStatusUI(suiToggle.checked);
+    if (suiToggle.checked) {
+      refreshSuiBalance();
+      refreshSuiAssets();
+      refreshSuiActivity();
+    }
+  }
+  if (suiAddr) {
+    suiAddr.value = settings.suiAddress || '';
+    updateExplorerLink(settings.suiAddress || '');
+  }
+}
+
+function updateSuiStatusUI(enabled: boolean) {
+  const status = document.getElementById('sui-status');
+  if (status) {
+    status.textContent = enabled ? 'Active' : 'Disconnected';
+    status.classList.toggle('active', enabled);
+  }
+}
+
+async function refreshSuiBalance() {
+  const api = (window as any).electronAPI;
+  const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
+  const addr = suiAddressInput?.value.trim() || currentSettings?.suiAddress;
+  const enabled = (document.getElementById('sui-enabled-toggle') as HTMLInputElement)?.checked ?? currentSettings?.suiEnabled;
+
+  const display = document.getElementById('sui-balance-display');
+
+  if (!enabled || !addr) {
+    console.log('[Settings] Skipping balance fetch: disabled or no address');
+    if (display) display.textContent = '0.000 SUI';
+    return;
+  }
+
+  // Basic SUI address validation
+  if (!addr.startsWith('0x') || addr.length < 64) {
+    console.log('[Settings] Skipping balance fetch: invalid address format');
+    if (display) display.textContent = 'Invalid Address';
+    return;
+  }
+  
+  if (display) display.textContent = '...';
+
+  try {
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    console.log('[Settings] Fetching balance via Rust for:', addr);
+    
+    const response: any = await api.suiRpcCall('suix_getBalance', [addr, '0x2::sui::SUI'], rpcUrl);
+    
+    if (response.error) {
+        throw new Error(response.error.message || 'RPC Error');
+    }
+
+    const balance = response.result;
+    console.log('[Settings] Raw balance result (Rust):', balance);
+    if (display) {
+      if (balance && balance.totalBalance !== undefined) {
+        // SUI has 9 decimals
+        const totalBalance = BigInt(balance.totalBalance);
+        const amount = Number(totalBalance) / 1_000_000_000;
+        display.textContent = `${amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} SUI`;
+      } else {
+        console.warn('[Settings] Balance field missing in response:', balance);
+        display.textContent = '0.000 SUI';
+      }
+    }
+  } catch (err: any) {
+    console.error('[Settings] SUI Balance Fetch Error:', {
+      message: err.message,
+      stack: err.stack,
+      cause: err.cause,
+      name: err.name
+    });
+    if (display) {
+        display.textContent = `Error: ${err.message || 'Load failed'}`;
+        display.title = err.stack || ''; // Show stack on hover for debug
+        display.style.fontSize = '12px';
+        display.style.color = '#ff5555';
+    }
+  }
+}
+
+async function refreshSuiAssets() {
+  const api = (window as any).electronAPI;
+  const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
+  const addr = suiAddressInput?.value.trim() || currentSettings?.suiAddress;
+  const enabled = (document.getElementById('sui-enabled-toggle') as HTMLInputElement)?.checked ?? currentSettings?.suiEnabled;
+
+  if (!enabled || !addr) return;
+  
+  const container = document.getElementById('wallet-assets-list');
+  if (!container) return;
+
+  try {
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    console.log('[Settings] Fetching assets via Rust for:', addr);
+    
+    const response: any = await api.suiRpcCall('suix_getOwnedObjects', [{
+        owner: addr,
+        options: { showType: true, showContent: true, showDisplay: true }
+    }], rpcUrl);
+
+    if (response.error) throw new Error(response.error.message);
+    const data = response.result.data || [];
+
+    if (!data || data.length === 0) {
+      container.innerHTML = `<div class="empty-state">No assets found in this wallet</div>`;
+      return;
+    }
+
+    container.innerHTML = data.map((obj: any) => {
+      const type = obj.data?.type || 'Unknown';
+      const shortType = type.split('::').pop();
+      const name = obj.data?.display?.data?.name || shortType;
+      const isCoin = type.includes('0x2::coin::Coin');
+      const icon = isCoin ? '🪙' : '📦';
+      
+      return `
+        <div class="asset-item">
+          <div class="asset-icon">${icon}</div>
+          <div class="asset-info">
+            <span class="asset-name">${name}</span>
+            <span class="asset-type">${shortType}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Failed to fetch assets:', err);
+    container.innerHTML = `<div class="empty-state">Failed to load assets</div>`;
+  }
+}
+
+async function refreshSuiActivity() {
+  const api = (window as any).electronAPI;
+  const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
+  const addr = suiAddressInput?.value.trim() || currentSettings?.suiAddress;
+  const enabled = (document.getElementById('sui-enabled-toggle') as HTMLInputElement)?.checked ?? currentSettings?.suiEnabled;
+
+  if (!enabled || !addr) return;
+  
+  const container = document.getElementById('recent-activity-list');
+  if (!container) return;
+
+  try {
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    console.log('[Settings] Fetching activity via Rust for:', addr);
+
+    const response: any = await api.suiRpcCall('suix_queryEvents', [{
+        query: {
+          MoveModule: {
+            package: '0x9953930b201460e1d5a71a06708fc7347952a1228221805f32be97e93892705a',
+            module: 'pet_nft'
+          }
+        },
+        limit: 5,
+        order: 'descending'
+    }], rpcUrl);
+
+    if (response.error) throw new Error(response.error.message);
+    const data = response.result.data || [];
+
+    if (!data || data.length === 0) {
+      container.innerHTML = `<div class="empty-state">No recent activity</div>`;
+      return;
+    }
+
+    container.innerHTML = data.map((event: any) => {
+      const type = event.type.split('::').pop();
+      const time = new Date(Number(event.timestampMs)).toLocaleTimeString();
+      const isMe = event.sender === currentSettings?.suiAddress;
+      
+      let desc = '';
+      if (type === 'MessageEvent') desc = `Message: "${event.parsedJson.text}"`;
+      else if (type === 'BonkEvent') desc = `Pet was bonked!`;
+      else desc = `Interaction with pet contract`;
+
+      return `
+        <div class="activity-item">
+          <div class="activity-header">
+            <span class="activity-type">${type}</span>
+            <span class="activity-time">${time}</span>
+          </div>
+          <p class="activity-desc">${desc} ${isMe ? '(You)' : ''}</p>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Failed to fetch activity:', err);
+    container.innerHTML = `<div class="empty-state">Failed to load activity</div>`;
+  }
 }
 
 function setupTabs(): void {
@@ -345,7 +621,14 @@ function setupTabs(): void {
       tab.classList.add('active');
       panels.forEach(p => {
         p.classList.remove('active');
-        if (p.id === `tab-${target}`) p.classList.add('active');
+        if (p.id === `tab-${target}`) {
+          p.classList.add('active');
+          if (target === 'blockchain') {
+            refreshSuiBalance();
+            refreshSuiAssets();
+            refreshSuiActivity();
+          }
+        }
       });
     });
   });

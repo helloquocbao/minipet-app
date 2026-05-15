@@ -135,35 +135,6 @@ pub fn resize_window_keep_bottom(
 }
 
 #[tauri::command]
-pub fn update_speech_window(
-    app: AppHandle,
-    instance_id: String,
-    text: String,
-    visible: bool,
-    x: f64,
-    y: f64,
-) -> Result<(), String> {
-    let label = format!("speech-{}", instance_id);
-    if let Some(win) = app.get_webview_window(&label) {
-        if visible {
-            let _ = win.set_position(tauri::LogicalPosition::new(x, y));
-            if !win.is_visible().unwrap_or(false) {
-                let _ = win.show();
-            }
-            if !text.is_empty() {
-                let event_name = format!("update-speech-{}", instance_id);
-                let _ = win.emit(&event_name, serde_json::json!({ "text": text, "visible": true }));
-            }
-        } else {
-            let _ = win.hide();
-            let event_name = format!("update-speech-{}", instance_id);
-            let _ = win.emit(&event_name, serde_json::json!({ "text": "", "visible": false }));
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub fn toggle_visibility(app: AppHandle) -> Result<(), String> {
     let mut visible = true;
     // Check first pet window to determine current state
@@ -173,7 +144,7 @@ pub fn toggle_visibility(app: AppHandle) -> Result<(), String> {
 
     for window in app.webview_windows().values() {
         let label = window.label();
-        if label.starts_with("overlay-") || label.starts_with("speech-") {
+        if label.starts_with("overlay-") {
             if visible {
                 let _ = window.show();
             } else {
@@ -197,6 +168,54 @@ pub fn set_drag_mode(app: AppHandle, instance_id: String, enabled: bool) {
 #[tauri::command]
 pub fn open_settings(app: AppHandle) -> Result<(), String> {
     crate::window::settings::open(&app)
+}
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("start")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sui_rpc_call(method: String, params: serde_json::Value, rpc_url: String) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params
+    });
+
+    let res = client.post(&rpc_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    Ok(json)
 }
 
 // --- File Eating ---

@@ -55,6 +55,7 @@ export interface ElectronAPI {
   onSomeoneSpeaking: (cb: () => void) => void;
   onWindowMoved: (cb: (x: number, y: number) => void) => void;
   onDragDrop: (cb: (type: string, paths: string[]) => void) => void;
+  onBlockchainEvent: (cb: (event: any) => void) => void;
 }
 
 declare global {

@@ -25,6 +25,10 @@
           <span class="tab-icon">⚙️</span>
           <span data-i18n="preferences">Configuration</span>
         </button>
+        <button class="tab-btn" data-tab="blockchain">
+          <span class="tab-icon">🔗</span>
+          <span data-i18n="suiBlockchain">Blockchain</span>
+        </button>
       </nav>
 
       <div class="tab-content">
@@ -150,9 +154,85 @@
               </div>
 
               <!-- Interaction -->
-              <div class="setting-item">
-                <label data-i18n="interaction">Interaction</label>
-                <button id="ping-pet-btn" class="secondary-btn" data-i18n="pingPet">Ping Pet</button>
+               <div class="setting-item">
+                 <label data-i18n="interaction">Interaction</label>
+                 <button id="ping-pet-btn" class="secondary-btn" data-i18n="pingPet">Ping Pet</button>
+               </div>
+             </div>
+           </section>
+         </div>
+
+        <!-- Tab 3: Blockchain -->
+        <div id="tab-blockchain" class="tab-panel">
+          <section class="section">
+            <div class="section-header-row">
+              <h2 data-i18n="suiBlockchain">SUI Blockchain</h2>
+              <div class="header-actions">
+                <button id="refresh-blockchain-btn" class="refresh-btn" title="Refresh">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>
+                  </svg>
+                </button>
+                <div class="status-tag sui" id="sui-status">Disconnected</div>
+              </div>
+            </div>
+            
+            <div class="blockchain-card">
+              <div class="card-header">
+                <div class="card-icon">💧</div>
+                <div class="card-info">
+                  <h3 data-i18n="suiIntegration">SUI Integration</h3>
+                  <p class="card-desc" data-i18n="suiHint">Connect your pet to the SUI blockchain to react to on-chain events.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="sui-enabled-toggle" />
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <div class="card-body">
+                <div class="setting-item-block">
+                  <label data-i18n="suiAddress">Your SUI Wallet Address</label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">👤</span>
+                    <input type="text" id="sui-address-input" class="text-input" placeholder="0x..." />
+                    <button id="check-wallet-btn" class="input-action-btn primary" title="Check Wallet">🔍</button>
+                    <button id="copy-address-btn" class="input-action-btn" title="Copy Address">📋</button>
+                  </div>
+                  <div class="address-actions">
+                    <a id="explorer-link" href="#" target="_blank" class="explorer-link">
+                      <span class="link-icon">🌐</span>
+                      <span data-i18n="viewOnExplorer">View on Explorer</span>
+                    </a>
+                  </div>
+                </div>
+
+                <div class="blockchain-stats">
+                  <div class="stat-item">
+                    <span class="stat-label" data-i18n="network">Network</span>
+                    <span class="stat-value">Testnet</span>
+                  </div>
+                  <div class="stat-item">
+                    <span class="stat-label" data-i18n="balance">Balance</span>
+                    <span id="sui-balance-display" class="stat-value">0 SUI</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- New Section: Wallet Assets -->
+            <div class="blockchain-sub-section">
+              <h3 data-i18n="walletAssets">Wallet Assets</h3>
+              <div id="wallet-assets-list" class="assets-list">
+                <div class="empty-state" data-i18n="noAssets">Connect wallet to see assets</div>
+              </div>
+            </div>
+
+            <!-- New Section: Recent Activity -->
+            <div class="blockchain-sub-section">
+              <h3 data-i18n="recentActivity">Recent Activity</h3>
+              <div id="recent-activity-list" class="activity-list">
+                <div class="empty-state" data-i18n="noActivity">No recent activity detected</div>
               </div>
             </div>
           </section>

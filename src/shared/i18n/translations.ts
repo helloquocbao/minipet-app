@@ -30,6 +30,20 @@ export const translations: Record<Language, any> = {
     removePet: 'Remove',
     maxPetsReached: 'Maximum 5 pets reached!',
     language: 'Language',
+    suiBlockchain: 'SUI Blockchain',
+    suiEnabled: 'Enable SUI Integration',
+    suiHint: 'Monitor on-chain interactions and animations.',
+    suiAddress: 'Your SUI Address',
+    suiRpcUrl: 'RPC Node URL',
+    suiIntegration: 'SUI Integration',
+    network: 'Network',
+    balance: 'Balance',
+    walletAssets: 'Wallet Assets',
+    noAssets: 'Connect wallet to see assets',
+    recentActivity: 'Recent Activity',
+    noActivity: 'No recent activity detected',
+    viewOnExplorer: 'View on Explorer',
+    addressCopied: 'Address copied to clipboard!',
     statusIdle: 'Ready',
     statusFocus: 'ACTIVE: FOCUSING',
     statusBreak: 'ACTIVE: RESTING',
@@ -231,6 +245,38 @@ export const translations: Record<Language, any> = {
       'Hungry for success and for food? 🥨',
       'Don\'t skip lunch! 🥪'
     ],
+    blockchainReceiveCoin: [
+      'Wow! Just received {amount} {coin}! 🚀',
+      'Look! Someone sent us {amount} {coin}! ✨',
+      'Lucky day! {amount} {coin} added to wallet. ✅',
+      'Cha-ching! {amount} {coin} in the bag! 💰',
+      'Energy surge! {amount} {coin} detected! ⚡',
+      'New assets! +{amount} {coin}. Happy times! 🐾',
+      'Is it raining SUI? Just got {amount} {coin}! ☔',
+      'Jackpot! {amount} {coin} added! ✨'
+    ],
+    blockchainSendCoin: [
+      'Sent {amount} {coin}. Bye bye money! 👋',
+      'Payment of {amount} {coin} successful. ✨',
+      'Wallet updated: -{amount} {coin}. 📉',
+      'Just spent {amount} {coin}. Worth it! 💸',
+      'Transaction complete: -{amount} {coin}. 👋',
+      'Investing {amount} {coin} into the future! 🚀',
+      'Spread the wealth! Sent {amount} {coin}. ✨',
+      'Farewell, {amount} {coin}! 🐾'
+    ],
+    blockchainBonk: [
+      '{pet} bonked me! (-{amount} {coin}) 😵',
+      'Ouch! {pet} bonked me for {amount} {coin}! 🤕',
+      'Bonk alert! {pet} stole {amount} {coin}! 🔨',
+      'Hey! {pet} just bonked me! (-{amount} {coin}) 💢'
+    ],
+    blockchainMessage: [
+      '{pet}: {message} (+{amount} {coin})',
+      'New mail from {pet}: {message} ✉️',
+      '{pet} says: {message} ({amount} {coin} attached) ✨',
+      'Message from {pet}! "{message}" (+{amount}) 🐾'
+    ]
   },
   vi: {
     settingsTitle: 'Cài đặt MiniPet',
@@ -261,6 +307,20 @@ export const translations: Record<Language, any> = {
     removePet: 'Thu hồi',
     maxPetsReached: 'Đã đạt giới hạn 5 thú cưng!',
     language: 'Ngôn ngữ',
+    suiBlockchain: 'Blockchain SUI',
+    suiEnabled: 'Bật tích hợp SUI',
+    suiHint: 'Theo dõi tương tác và chạy hiệu ứng từ blockchain.',
+    suiAddress: 'Địa chỉ ví SUI của bạn',
+    suiRpcUrl: 'Link RPC Node',
+    suiIntegration: 'Tích hợp SUI',
+    network: 'Mạng lưới',
+    balance: 'Số dư',
+    walletAssets: 'Tài sản ví',
+    noAssets: 'Kết nối ví để xem tài sản',
+    recentActivity: 'Hoạt động gần đây',
+    noActivity: 'Không có hoạt động nào',
+    viewOnExplorer: 'Xem trên Explorer',
+    addressCopied: 'Đã sao chép địa chỉ!',
     statusIdle: 'Sẵn sàng',
     statusFocus: 'ĐANG CHẠY: TẬP TRUNG',
     statusBreak: 'ĐANG CHẠY: NGHỈ NGƠI',
@@ -475,6 +535,43 @@ export const translations: Record<Language, any> = {
       'Ăn để lấy sức "chiến" tiếp buổi chiều nào! 🥨',
       'Đừng mải làm mà quên ăn nhé sen! 🥪'
     ],
+    blockchainReceiveCoin: [
+      'Woa! Tôi vừa nhận được {amount} {coin} nè! 🚀',
+      'Sen ơi, có người gửi {amount} {coin} cho mình kìa! ✨',
+      'Giàu to rồi! Vừa có {amount} {coin} chuyển vào ví. ✅',
+      'Cảm ơn người lạ nào đó đã gửi {amount} {coin} nhé! 🙏',
+      '{amount} {coin}! Đủ mua hạt cho cả tuần luôn! 🍖',
+      'Đỉnh nóc kịch trần luôn! Vừa nhận được {amount} {coin} nè! 🚀',
+      'Kiwi kiwi ngon quá! Cảm ơn {amount} {coin} của ai đó nhé! 🥝',
+      'Đúng nhận sai cãi hộ tui cái, có {amount} {coin} vừa bay vào ví! 🔮',
+      'Flex nhẹ chiếc ví vừa được nạp thêm {amount} {coin}! ✨',
+      'Hết nước chấm! {amount} {coin} đã về bản, đi ăn buffet thôi sen ơi! 🍜',
+      'Vibe check: Quá là giàu luôn với {amount} {coin} mới nhận. ✅',
+      'Tiền về! Tiền về! {amount} {coin} đã "cập bến". ⛴️',
+      'Ước gì ngày nào cũng được nhận {amount} {coin} thế này! ❤️'
+    ],
+    blockchainSendCoin: [
+      'Vừa gửi đi {amount} {coin} rồi sen ơi! 👋',
+      'Thanh toán {amount} {coin} thành công nhé! ✨',
+      'Ví vơi đi một ít rồi: -{amount} {coin}. 📉',
+      'Tiền đi rồi có trở lại không sen? -{amount} {coin} 👋',
+      'Vừa chi tiêu {amount} {coin} xong! 💸',
+      'Đầu tư {amount} {coin} cho tương lai nào! 🚀',
+      'Giao dịch hoàn tất: -{amount} {coin}. Chúc sen may mắn lần sau! ✨',
+      'Tạm biệt nhé, {amount} {coin} thân yêu! 🐾'
+    ],
+    blockchainBonk: [
+      '{pet} đã gõ đầu mình và trả {amount} {coin}! 😵',
+      'Ối! {pet} vừa gõ đầu mình mất {amount} {coin} kìa! 🤕',
+      'Cảnh báo: {pet} đã "bonk" mình mất {amount} {coin}! 🔨',
+      'Này! {pet} vừa mới gõ đầu mình xong! (-{amount} {coin}) 💢'
+    ],
+    blockchainMessage: [
+      '{pet}: {message} (+{amount} {coin})',
+      'Tin nhắn mới từ {pet}: {message} ✉️',
+      '{pet} nhắn là: {message} (có gửi kèm {amount} {coin}) ✨',
+      'Thông điệp từ {pet}: "{message}" (+{amount} {coin}) 🐾'
+    ]
   },
   fr: {
     settingsTitle: 'Paramètres MiniPet',
@@ -557,6 +654,24 @@ export const translations: Record<Language, any> = {
     intelWebDesign: ['Super design ! 🎨', 'On crée quelque chose de beau ? 🌈'],
     intelTimeLate: ['Il est tard, va dormir ! 😴', 'Tes yeux ont besoin de repos. 🌙'],
     intelTimeLunch: ['C\'est l\'heure de manger ! 🍱', 'Manger, c\'est du carburant ! 🍎'],
+    blockchainReceiveCoin: [
+      'Wow ! {amount} {coin} reçus ! 🚀',
+      'Regarde ! On nous a envoyé {amount} {coin} ! ✨',
+      'Jour de chance ! {amount} {coin} ajoutés au portefeuille. ✅'
+    ],
+    blockchainSendCoin: [
+      'Envoyé {amount} {coin}. Au revoir l\'argent ! 👋',
+      'Paiement de {amount} {coin} réussi. ✨',
+      'Portefeuille mis à jour : -{amount} {coin}. 📉'
+    ],
+    blockchainBonk: [
+      '{pet} m\'a frappé ! (-{amount} {coin}) 😵',
+      'Aïe ! {pet} m\'a frappé pour {amount} {coin} ! 🤕'
+    ],
+    blockchainMessage: [
+      '{pet} : {message} (+{amount} {coin})',
+      'Nouveau message de {pet} : {message} ✉️'
+    ]
   },
   zh: {
     settingsTitle: 'MiniPet 设置',
@@ -636,6 +751,24 @@ export const translations: Record<Language, any> = {
     intelWebDesign: ['好漂亮的设计！ 🎨', '今天要创造美吗？ 🌈'],
     intelTimeLate: ['很晚了，去睡觉吧！ 😴', '你的眼睛需要休息。 🌙'],
     intelTimeLunch: ['午饭时间，休息一下！ 🍱', '美食就是动力！ 🍎'],
+    blockchainReceiveCoin: [
+      '哇！刚刚收到 {amount} {coin}！ 🚀',
+      '看！有人给我们发了 {amount} {coin}！ ✨',
+      '幸运的一天！钱包增加了 {amount} {coin}。 ✅'
+    ],
+    blockchainSendCoin: [
+      '已发送 {amount} {coin}。再见，钱钱！ 👋',
+      '成功支付 {amount} {coin}。 ✨',
+      '钱包已更新：-{amount} {coin}。 📉'
+    ],
+    blockchainBonk: [
+      '{pet} 敲了我的头！ (-{amount} {coin}) 😵',
+      '哎哟！{pet} 敲了我一下，扣了 {amount} {coin}！ 🤕'
+    ],
+    blockchainMessage: [
+      '{pet}: {message} (+{amount} {coin})',
+      '来自 {pet} 的新消息: {message} ✉️'
+    ]
   },
   it: {
     settingsTitle: 'Impostazioni MiniPet',
@@ -715,6 +848,24 @@ export const translations: Record<Language, any> = {
     intelWebDesign: ['Bel design! 🎨', 'Creiamo qualcosa de bello oggi? 🌈'],
     intelTimeLate: ['È tardi, vai a dormire! 😴', 'I tuoi occhi hanno bisogno di riposo. 🌙'],
     intelTimeLunch: ['È ora di pranzo, fai una pausa! 🍱', 'Il cibo è carburante! 🍎'],
+    blockchainReceiveCoin: [
+      'Wow! Ricevuti {amount} {coin}! 🚀',
+      'Guarda! Qualcuno ci ha inviato {amount} {coin}! ✨',
+      'Giorno fortunato! {amount} {coin} aggiunti al portafoglio. ✅'
+    ],
+    blockchainSendCoin: [
+      'Inviati {amount} {coin}. Ciao ciao soldi! 👋',
+      'Pagamento di {amount} {coin} riuscito. ✨',
+      'Portafoglio aggiornato: -{amount} {coin}. 📉'
+    ],
+    blockchainBonk: [
+      '{pet} mi ha colpito! (-{amount} {coin}) 😵',
+      'Ahia! {pet} mi ha dato un colpo per {amount} {coin}! 🤕'
+    ],
+    blockchainMessage: [
+      '{pet}: {message} (+{amount} {coin})',
+      'Nuovo messaggio da {pet}: {message} ✉️'
+    ]
   },
   ko: {
     settingsTitle: 'MiniPet 설정',
@@ -795,5 +946,23 @@ export const translations: Record<Language, any> = {
     intelWebDesign: ['멋진 디자인이에요! 🎨', '오늘 아름다운 무언가를 만들어볼까요? 🌈'],
     intelTimeLate: ['늦었어요, 이제 자야 할 시간이에요! 😴', '눈의 휴식이 필요해요. 🌙'],
     intelTimeLunch: ['점심 시간이에요, 좀 쉬어요! 🍱', '음식은 에너지의 근원! 🍎'],
-  },
+    blockchainReceiveCoin: [
+      '와우! {amount} {coin}을(를) 받았어요! 🚀',
+      '보세요! 누군가 우리에게 {amount} {coin}을(를) 보냈어요! ✨',
+      '운 좋은 날이네요! {amount} {coin}이(가) 지갑에 추가되었습니다. ✅'
+    ],
+    blockchainSendCoin: [
+      '{amount} {coin}을(를) 보냈어요. 안녕, 내 돈! 👋',
+      '{amount} {coin} 결제가 완료되었습니다. ✨',
+      '지갑이 업데이트되었습니다: -{amount} {coin}. 📉'
+    ],
+    blockchainBonk: [
+      '{pet}이(가) 저를 때렸어요! (-{amount} {coin}) 😵',
+      '아야! {pet}이(가) {amount} {coin}만큼 저를 때렸어요! 🤕'
+    ],
+    blockchainMessage: [
+      '{pet}: {message} (+{amount} {coin})',
+      '{pet}님으로부터 새 메시지가 도착했습니다: {message} ✉️'
+    ]
+  }
 };

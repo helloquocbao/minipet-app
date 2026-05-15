@@ -42,12 +42,19 @@ pub struct UserSettings {
     pub last_y: Option<f64>,
     #[serde(default = "default_lang")]
     pub language: String,
+    #[serde(rename = "suiAddress", default)]
+    pub sui_address: String,
+    #[serde(rename = "suiRpcUrl", default = "default_sui_rpc")]
+    pub sui_rpc_url: String,
+    #[serde(rename = "suiEnabled", default)]
+    pub sui_enabled: bool,
 }
 
 fn default_position() -> String { "bottom-right".to_string() }
 fn default_scale() -> f64 { 1.0 }
 fn default_true() -> bool { true }
 fn default_lang() -> String { "en".to_string() }
+fn default_sui_rpc() -> String { "https://sui-testnet.public.blastapi.io".to_string() }
 
 impl Default for UserSettings {
     fn default() -> Self {
@@ -63,6 +70,9 @@ impl Default for UserSettings {
             last_x: None,
             last_y: None,
             language: "en".to_string(),
+            sui_address: "".to_string(),
+            sui_rpc_url: "https://sui-testnet.public.blastapi.io".to_string(),
+            sui_enabled: false,
         }
     }
 }
@@ -87,6 +97,9 @@ pub struct PetManager {
     pub pets_dir: PathBuf,
     pub settings_path: PathBuf,
     pub default_pet_slugs: Vec<String>,
+    pub master_instance_id: Option<String>,
+    pub is_dirty: bool,
+    pub last_save_time: std::time::Instant,
 }
 
 impl PetManager {
@@ -97,6 +110,9 @@ impl PetManager {
             pets_dir: app_data_dir.join("pets"),
             settings_path: app_data_dir.join("settings.json"),
             default_pet_slugs: vec![],
+            master_instance_id: None,
+            is_dirty: false,
+            last_save_time: std::time::Instant::now(),
         }
     }
 
@@ -134,6 +150,12 @@ impl PetManager {
             self.settings.active_pet_slug = Some(slug);
             self.save_settings().await;
         }
+
+        // Elect Master: The first instance in active_pets
+        if let Some(first) = self.settings.active_pets.first() {
+            self.master_instance_id = Some(first.id.clone());
+        }
+
         Ok(())
     }
 
@@ -163,6 +185,7 @@ impl PetManager {
         let mut config = serde_json::to_value(&pet.manifest).ok()?;
         let obj = config.as_object_mut()?;
         obj.insert("instanceId".to_string(), serde_json::json!(instance.id));
+        obj.insert("slug".to_string(), serde_json::json!(instance.slug));
         obj.insert(
             "spritesheetPath".to_string(),
             serde_json::json!(pet.spritesheet_path.to_string_lossy().to_string()),
@@ -258,6 +281,21 @@ impl PetManager {
                     self.settings.position = s.to_string();
                 }
             }
+            if let Some(v) = obj.get("suiEnabled") {
+                if let Some(b) = v.as_bool() {
+                    self.settings.sui_enabled = b;
+                }
+            }
+            if let Some(v) = obj.get("suiAddress") {
+                if let Some(s) = v.as_str() {
+                    self.settings.sui_address = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("suiRpcUrl") {
+                if let Some(s) = v.as_str() {
+                    self.settings.sui_rpc_url = s.to_string();
+                }
+            }
         }
         self.save_settings().await;
     }
@@ -266,8 +304,13 @@ impl PetManager {
         if let Some(inst) = self.settings.active_pets.iter_mut().find(|i| i.id == id) {
             inst.x = x;
             inst.y = y;
+            self.is_dirty = true;
         }
-        self.save_settings().await;
+        
+        // Debounce: Only save to disk if it's been > 5 seconds OR if specifically requested
+        if self.is_dirty && self.last_save_time.elapsed() > std::time::Duration::from_secs(5) {
+            self.save_settings().await;
+        }
     }
 
     pub fn get_positions(&self) -> Vec<serde_json::Value> {
@@ -462,9 +505,12 @@ impl PetManager {
         self.save_settings().await;
     }
 
-    pub async fn save_settings(&self) {
+    pub async fn save_settings(&mut self) {
         if let Ok(json) = serde_json::to_string_pretty(&self.settings) {
-            let _ = tokio::fs::write(&self.settings_path, json).await;
+            if let Ok(_) = tokio::fs::write(&self.settings_path, json).await {
+                self.is_dirty = false;
+                self.last_save_time = std::time::Instant::now();
+            }
         }
     }
 }
