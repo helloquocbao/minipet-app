@@ -1,20 +1,43 @@
 use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+struct AppCache {
+    name: Option<String>,
+    last_updated: Instant,
+}
+
+static CACHE: Mutex<Option<AppCache>> = Mutex::new(None);
+const CACHE_DURATION: Duration = Duration::from_secs(2);
+
 #[allow(dead_code)]
 pub fn get_active_app() -> Option<String> {
     if cfg!(target_os = "macos") {
+        let mut cache = CACHE.lock().unwrap();
+        
+        if let Some(c) = &*cache {
+            if c.last_updated.elapsed() < CACHE_DURATION {
+                return c.name.clone();
+            }
+        }
+
         let output = Command::new("osascript")
             .arg("-e")
             .arg("tell application \"System Events\" to get name of first process whose frontmost is true")
             .output()
             .ok()?;
+        
         let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if name.is_empty() {
-            None
-        } else {
-            Some(name)
-        }
+        let result = if name.is_empty() { None } else { Some(name) };
+        
+        *cache = Some(AppCache {
+            name: result.clone(),
+            last_updated: Instant::now(),
+        });
+        
+        result
     } else {
         None
     }

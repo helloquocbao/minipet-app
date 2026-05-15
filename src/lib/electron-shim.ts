@@ -132,13 +132,6 @@ export function setupElectronShim() {
         await win.setSize(new LogicalSize(Math.max(50, width), Math.max(50, height)));
       }
     },
-    updateSpeech: (text: string, visible: boolean, x: number, y: number) => {
-      const params = new URLSearchParams(window.location.search);
-      const instanceId = params.get('id');
-      if (instanceId) {
-        invoke('update_speech_window', { instanceId, text, visible, x, y });
-      }
-    },
     toggleVisibility: () => invoke('toggle_visibility'),
     exitApp: () => invoke('exit_app'),
     openSettings: () => invoke('open_settings'),

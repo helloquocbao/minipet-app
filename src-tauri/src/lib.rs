@@ -120,7 +120,6 @@ pub fn run() {
             commands::broadcast_pet_event,
             commands::debug_log,
             commands::resize_window_keep_bottom,
-            commands::update_speech_window,
             commands::toggle_visibility,
             commands::exit_app,
         ])

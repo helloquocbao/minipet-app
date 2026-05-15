@@ -486,31 +486,25 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
 }
 
 /**
- * Automatically adjusts the window size to prevent cropping, especially when speech bubbles are visible.
- * Compensates Y position to keep the pet's bottom edge fixed.
- */
-// Constants for the separate speech window (must match Rust)
-const SPEECH_WIDTH = 300;
-const SPEECH_HEIGHT = 80;
-const OVERLAY_WIDTH = 192;
-
-/**
- * Updates the separate speech window's position and text.
+ * Updates the internal speech bubble text and visibility.
  */
 function updateSpeechOverlay(text: string, visible: boolean) {
-  const pos = (window.electronAPI as any).getLogicalPosition?.() || { x: window.screenX, y: window.screenY };
-  const dpr = window.devicePixelRatio || 1;
-  
-  let winX = pos.x;
-  let winY = pos.y;
-  if (winX > window.screen.width) { winX /= dpr; winY /= dpr; }
+  const bubble = document.getElementById('speech-bubble');
+  if (!bubble) return;
 
-  // Position above pet: center horizontally relative to actual pet window width
-  const currentPetWidth = window.innerWidth;
-  const speechX = winX - (SPEECH_WIDTH - currentPetWidth) / 2.0;
-  const speechY = winY - SPEECH_HEIGHT;
-
-  (window.electronAPI as any).updateSpeech(text, visible, speechX, speechY);
+  if (visible) {
+    bubble.textContent = text;
+    bubble.classList.add('visible');
+    
+    // Position bubble above pet based on current pet height
+    const canvas = document.getElementById('pet-canvas');
+    if (canvas) {
+        const petHeight = canvas.offsetHeight;
+        bubble.style.bottom = `${petHeight + 10}px`;
+    }
+  } else {
+    bubble.classList.remove('visible');
+  }
 }
 
 async function syncWindowSize(): Promise<void> {
@@ -518,13 +512,13 @@ async function syncWindowSize(): Promise<void> {
   const petWidth = Math.ceil(PETDEX_SPRITE.FRAME_WIDTH * safeScale);
   const petHeight = Math.ceil(PETDEX_SPRITE.FRAME_HEIGHT * safeScale);
 
-  // Pet window now always fits exactly the pet sprite
-  const newHeight = petHeight;
-  const newWidth = petWidth;
-
-  if (newHeight === window.innerHeight && newWidth === window.innerWidth) return;
-
-  await (window.electronAPI as any).resizeKeepBottom(newWidth, newHeight);
+  // Unified window size (320x320 set in Rust)
+  // We keep the internal canvas size updated
+  const canvas = document.getElementById('pet-canvas') as HTMLCanvasElement;
+  if (canvas) {
+    canvas.style.width = `${petWidth}px`;
+    canvas.style.height = `${petHeight}px`;
+  }
 }
 
 /**

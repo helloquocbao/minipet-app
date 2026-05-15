@@ -1,21 +1,17 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, LogicalPosition, LogicalSize};
 
-const OVERLAY_WIDTH: f64 = 192.0;
-const OVERLAY_HEIGHT: f64 = 208.0;
-
-const SPEECH_WIDTH: f64 = 300.0;
-const SPEECH_HEIGHT: f64 = 80.0;
+const OVERLAY_WIDTH: f64 = 320.0;
+const OVERLAY_HEIGHT: f64 = 320.0;
 
 pub fn create(app: &AppHandle, instance_id: &str, x: f64, y: f64) -> Result<(), String> {
     let label = format!("overlay-{}", instance_id);
-    let speech_label = format!("speech-{}", instance_id);
 
     // Check if window already exists
     if app.get_webview_window(&label).is_some() {
         return Ok(());
     }
 
-    // 1. Create Pet Overlay Window
+    // 1. Create Unified Pet & Speech Window
     let url = WebviewUrl::App(format!("renderer/overlay/index.html?id={}", instance_id).into());
     let win = WebviewWindowBuilder::new(app, &label, url)
         .title(&format!("MiniPet-{}", instance_id))
@@ -32,26 +28,6 @@ pub fn create(app: &AppHandle, instance_id: &str, x: f64, y: f64) -> Result<(), 
         .map_err(|e| e.to_string())?;
     
     let _ = win.set_position(LogicalPosition::new(x, y));
-
-    // 2. Create Separate Speech Window
-    let speech_url = WebviewUrl::App(format!("renderer/speech/index.html?id={}", instance_id).into());
-    let speech_win = WebviewWindowBuilder::new(app, &speech_label, speech_url)
-        .title(&format!("MiniPet-Speech-{}", instance_id))
-        .inner_size(SPEECH_WIDTH, SPEECH_HEIGHT)
-        // Position above pet: center horizontally relative to pet width
-        .position(x - (SPEECH_WIDTH - OVERLAY_WIDTH) / 2.0, y - SPEECH_HEIGHT)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .shadow(false)
-        .visible(false) // Hidden by default
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let _ = speech_win.set_position(LogicalPosition::new(x - (SPEECH_WIDTH - OVERLAY_WIDTH) / 2.0, y - SPEECH_HEIGHT));
-    let _ = speech_win.set_ignore_cursor_events(true);
 
     Ok(())
 }

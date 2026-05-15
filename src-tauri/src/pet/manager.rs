@@ -97,6 +97,9 @@ pub struct PetManager {
     pub pets_dir: PathBuf,
     pub settings_path: PathBuf,
     pub default_pet_slugs: Vec<String>,
+    pub master_instance_id: Option<String>,
+    pub is_dirty: bool,
+    pub last_save_time: std::time::Instant,
 }
 
 impl PetManager {
@@ -107,6 +110,9 @@ impl PetManager {
             pets_dir: app_data_dir.join("pets"),
             settings_path: app_data_dir.join("settings.json"),
             default_pet_slugs: vec![],
+            master_instance_id: None,
+            is_dirty: false,
+            last_save_time: std::time::Instant::now(),
         }
     }
 
@@ -144,6 +150,12 @@ impl PetManager {
             self.settings.active_pet_slug = Some(slug);
             self.save_settings().await;
         }
+
+        // Elect Master: The first instance in active_pets
+        if let Some(first) = self.settings.active_pets.first() {
+            self.master_instance_id = Some(first.id.clone());
+        }
+
         Ok(())
     }
 
@@ -292,8 +304,13 @@ impl PetManager {
         if let Some(inst) = self.settings.active_pets.iter_mut().find(|i| i.id == id) {
             inst.x = x;
             inst.y = y;
+            self.is_dirty = true;
         }
-        self.save_settings().await;
+        
+        // Debounce: Only save to disk if it's been > 5 seconds OR if specifically requested
+        if self.is_dirty && self.last_save_time.elapsed() > std::time::Duration::from_secs(5) {
+            self.save_settings().await;
+        }
     }
 
     pub fn get_positions(&self) -> Vec<serde_json::Value> {
@@ -488,9 +505,12 @@ impl PetManager {
         self.save_settings().await;
     }
 
-    pub async fn save_settings(&self) {
+    pub async fn save_settings(&mut self) {
         if let Ok(json) = serde_json::to_string_pretty(&self.settings) {
-            let _ = tokio::fs::write(&self.settings_path, json).await;
+            if let Ok(_) = tokio::fs::write(&self.settings_path, json).await {
+                self.is_dirty = false;
+                self.last_save_time = std::time::Instant::now();
+            }
         }
     }
 }
