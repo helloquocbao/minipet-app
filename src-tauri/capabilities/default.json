@@ -1,7 +1,9 @@
 {
   "identifier": "default",
   "description": "Default capabilities for MiniPet",
-  "windows": ["*"],
+  "windows": [
+    "*"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-set-ignore-cursor-events",
@@ -26,6 +28,7 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-copy-file",
-    "fs:allow-rename"
+    "fs:allow-rename",
+    "clipboard-manager:default"
   ]
 }

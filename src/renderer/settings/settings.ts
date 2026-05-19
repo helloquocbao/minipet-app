@@ -15,7 +15,7 @@ const updateExplorerLink = (addr: string) => {
   const link = document.getElementById('explorer-link') as HTMLAnchorElement;
   if (link) {
     if (addr && addr.startsWith('0x')) {
-      link.href = `https://testnet.suivision.xyz/account/${addr}`;
+      link.href = `https://suivision.xyz/account/${addr}`;
       link.style.display = 'flex';
     } else {
       link.style.display = 'none';
@@ -460,7 +460,7 @@ async function refreshSuiBalance() {
   if (display) display.textContent = '...';
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
     console.log('[Settings] Fetching balance via Rust for:', addr);
     
     const response: any = await api.suiRpcCall('suix_getBalance', [addr, '0x2::sui::SUI'], rpcUrl);
@@ -510,7 +510,7 @@ async function refreshSuiAssets() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
     console.log('[Settings] Fetching assets via Rust for:', addr);
     
     const response: any = await api.suiRpcCall('suix_getOwnedObjects', [{
@@ -562,7 +562,7 @@ async function refreshSuiActivity() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
     console.log('[Settings] Fetching activity via Rust for:', addr);
 
     const response: any = await api.suiRpcCall('suix_queryEvents', [{

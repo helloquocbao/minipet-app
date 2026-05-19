@@ -16,7 +16,7 @@ const CACHE_DURATION: Duration = Duration::from_secs(2);
 pub fn get_active_app() -> Option<String> {
     if cfg!(target_os = "macos") {
         let mut cache = CACHE.lock().unwrap();
-        
+
         if let Some(c) = &*cache {
             if c.last_updated.elapsed() < CACHE_DURATION {
                 return c.name.clone();
@@ -28,15 +28,15 @@ pub fn get_active_app() -> Option<String> {
             .arg("tell application \"System Events\" to get name of first process whose frontmost is true")
             .output()
             .ok()?;
-        
+
         let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let result = if name.is_empty() { None } else { Some(name) };
-        
+
         *cache = Some(AppCache {
             name: result.clone(),
             last_updated: Instant::now(),
         });
-        
+
         result
     } else {
         None

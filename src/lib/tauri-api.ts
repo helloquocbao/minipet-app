@@ -68,8 +68,8 @@ export const onSettingsUpdate = (cb: (data: any) => void): Promise<UnlistenFn> =
 export const onPomoTick = (cb: (data: any) => void): Promise<UnlistenFn> =>
   listen('pomo:tick', (e) => cb(e.payload));
 
-export const onPetSay = (cb: (text: string) => void): Promise<UnlistenFn> =>
-  listen('pet:say', (e) => cb(e.payload as string));
+export const onPetSay = (cb: (payload: any) => Promise<void> | void): Promise<UnlistenFn> =>
+  listen('pet:say', (e) => cb(e.payload));
 
 export const onPetStartAlarm = (cb: () => void): Promise<UnlistenFn> =>
   listen('pet:start-alarm', () => cb());

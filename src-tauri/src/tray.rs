@@ -37,8 +37,7 @@ pub fn create(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let icon = Image::from_bytes(include_bytes!("../icons/icon.png"))
-        .map_err(|e| e.to_string())?;
+    let icon = Image::from_bytes(include_bytes!("../icons/icon.png")).map_err(|e| e.to_string())?;
 
     TrayIconBuilder::new()
         .icon(icon)

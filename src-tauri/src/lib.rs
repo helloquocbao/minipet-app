@@ -7,8 +7,9 @@ mod window;
 use pet::manager::PetManager;
 use pet::pomodoro::{PomodoroManager, PomodoroState};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use tokio::sync::Mutex;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub struct AppState {
     pub pet_manager: Mutex<PetManager>,
@@ -19,6 +20,7 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_autostart::init(
@@ -71,7 +73,10 @@ pub fn run() {
                 eprintln!("[MiniPet] Pets loaded: {}", mgr.pets.len());
                 eprintln!("[MiniPet] Active pets: {}", mgr.settings.active_pets.len());
                 for inst in &mgr.settings.active_pets {
-                    eprintln!("[MiniPet] Spawning: {} at ({}, {})", inst.slug, inst.x, inst.y);
+                    eprintln!(
+                        "[MiniPet] Spawning: {} at ({}, {})",
+                        inst.slug, inst.x, inst.y
+                    );
                 }
 
                 // Spawn overlay windows for all active pets
@@ -90,8 +95,36 @@ pub fn run() {
                 // monitor.start_monitoring().await;
             });
 
+            // Start Lightweight Clipboard Monitor for Security Agent
+            let cb_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut last_clipboard = String::new();
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    if let Ok(text) = cb_handle.clipboard().read_text() {
+                        // Tối ưu: Bỏ qua nếu text quá dài (> 500 ký tự) để tránh tốn CPU/RAM
+                        if text.len() > 500 {
+                            continue;
+                        }
+
+                        if text != last_clipboard {
+                            last_clipboard = text.clone();
+                            let trimmed = text.trim();
+                            // Check for Object ID (0x + 64 hex) or Coin Type (0x...::...::...)
+                            if (trimmed.starts_with("0x") && trimmed.len() == 66) || 
+                               (trimmed.starts_with("0x") && trimmed.contains("::")) {
+                                let _ = cb_handle.emit("clipboard://sui-address-copied", trimmed);
+                            }
+                        }
+                    }
+                }
+            });
+
             // Create system tray
-            tray::create(app.handle()).map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)) as Box<dyn std::error::Error>)?;
+            tray::create(app.handle()).map_err(|e| {
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    as Box<dyn std::error::Error>
+            })?;
 
             Ok(())
         })

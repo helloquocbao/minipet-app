@@ -168,7 +168,7 @@ export function setupElectronShim() {
     },
     onPomoTick: (cb: (state: any) => void) => { listen('pomo:tick', (e) => cb(e.payload)); },
     onPomoFinished: (cb: (sessionType: string) => void) => { listen('pomo:finished', (e) => cb(e.payload as string)); },
-    onPetSay: (cb: (text: string) => void) => { listen('pet:say', (e) => cb(e.payload as string)); },
+    onPetSay: (cb: (payload: any) => void) => { listen('pet:say', (e) => cb(e.payload)); },
     onSomeoneSpeaking: (cb: () => void) => { listen('pet:someone-speaking', () => cb()); },
     onWindowMoved: (cb: (x: number, y: number) => void) => {
       win.onMoved((event) => {

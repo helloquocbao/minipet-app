@@ -25,5 +25,3 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
 
     Ok(())
 }
-
-

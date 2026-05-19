@@ -55,6 +55,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   lastY: null,
   language: 'en',
   suiAddress: '',
-  suiRpcUrl: 'https://sui-testnet.public.blastapi.io',
+  suiRpcUrl: 'https://fullnode.mainnet.sui.io:443',
   suiEnabled: false,
 };

@@ -64,11 +64,16 @@ pub async fn get_spritesheet_data(
     slug: String,
 ) -> Result<String, String> {
     let mgr = state.pet_manager.lock().await;
-    let path = mgr.get_spritesheet_path(&slug)
+    let path = mgr
+        .get_spritesheet_path(&slug)
         .ok_or_else(|| "Pet not found".to_string())?;
     let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("webp");
-    let mime = if ext == "png" { "image/png" } else { "image/webp" };
+    let mime = if ext == "png" {
+        "image/png"
+    } else {
+        "image/webp"
+    };
     Ok(format!("data:{};base64,{}", mime, base64_encode(&bytes)))
 }
 
@@ -77,12 +82,28 @@ fn base64_encode(data: &[u8]) -> String {
     let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            chunk[1] as usize
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            chunk[2] as usize
+        } else {
+            0
+        };
         out.push(CHARS[b0 >> 2] as char);
         out.push(CHARS[((b0 & 3) << 4) | (b1 >> 4)] as char);
-        out.push(if chunk.len() > 1 { CHARS[((b1 & 0xf) << 2) | (b2 >> 6)] as char } else { '=' });
-        out.push(if chunk.len() > 2 { CHARS[b2 & 0x3f] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            CHARS[((b1 & 0xf) << 2) | (b2 >> 6)] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            CHARS[b2 & 0x3f] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -138,7 +159,11 @@ pub fn resize_window_keep_bottom(
 pub fn toggle_visibility(app: AppHandle) -> Result<(), String> {
     let mut visible = true;
     // Check first pet window to determine current state
-    if let Some(win) = app.webview_windows().values().find(|w| w.label().starts_with("overlay-")) {
+    if let Some(win) = app
+        .webview_windows()
+        .values()
+        .find(|w| w.label().starts_with("overlay-"))
+    {
         visible = !win.is_visible().unwrap_or(true);
     }
 
@@ -199,7 +224,11 @@ pub fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn sui_rpc_call(method: String, params: serde_json::Value, rpc_url: String) -> Result<serde_json::Value, String> {
+pub async fn sui_rpc_call(
+    method: String,
+    params: serde_json::Value,
+    rpc_url: String,
+) -> Result<serde_json::Value, String> {
     let client = reqwest::Client::new();
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
@@ -208,7 +237,8 @@ pub async fn sui_rpc_call(method: String, params: serde_json::Value, rpc_url: St
         "params": params
     });
 
-    let res = client.post(&rpc_url)
+    let res = client
+        .post(&rpc_url)
         .json(&payload)
         .send()
         .await
@@ -221,10 +251,7 @@ pub async fn sui_rpc_call(method: String, params: serde_json::Value, rpc_url: St
 // --- File Eating ---
 
 #[tauri::command]
-pub async fn eat_files(
-    state: State<'_, AppState>,
-    paths: Vec<String>,
-) -> Result<(), String> {
+pub async fn eat_files(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), String> {
     let mgr = state.pet_manager.lock().await;
     mgr.eat_files(paths).await
 }
@@ -275,8 +302,7 @@ pub async fn pomo_start(
     state: State<'_, AppState>,
     app: AppHandle,
     focus: i32,
-    #[allow(non_snake_case)]
-    breakMin: i32,
+    #[allow(non_snake_case)] breakMin: i32,
 ) -> Result<(), String> {
     let mut pomo = state.pomodoro.lock().await;
     pomo.start(focus, breakMin, state.pomo_state.clone(), app);
@@ -302,8 +328,7 @@ pub async fn pomo_update_config(
     state: State<'_, AppState>,
     app: AppHandle,
     focus: i32,
-    #[allow(non_snake_case)]
-    breakMin: i32,
+    #[allow(non_snake_case)] breakMin: i32,
 ) -> Result<(), String> {
     let mut pomo = state.pomodoro.lock().await;
     pomo.update_config(focus, breakMin, &state.pomo_state, &app);

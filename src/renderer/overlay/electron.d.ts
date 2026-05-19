@@ -56,8 +56,8 @@ export interface ElectronAPI {
   onWindowMoved: (cb: (x: number, y: number) => void) => void;
   onDragDrop: (cb: (type: string, paths: string[]) => void) => void;
   onBlockchainEvent: (cb: (event: any) => void) => void;
+  broadcastPetEvent: (event: string, payload: any) => Promise<void>;
 }
-
 declare global {
   interface Window {
     electronAPI: ElectronAPI;

@@ -6,6 +6,7 @@ import { translations, Language } from '../../shared/i18n/translations';
 import { SuiMonitor } from '../blockchain/monitor';
 import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { SecurityAgent } from '../blockchain/agent';
 
 let statusAlarming = false;
 let currentScale = 1.0;
@@ -20,6 +21,66 @@ let controller: AnimationController;
 let stateMachine: PetStateMachine;
 let currentSpeechText = '';
 let suiMonitor: SuiMonitor | null = null;
+let securityAgent: SecurityAgent | null = null;
+let currentActivePets: any[] = [];
+let speechWindowRef: any = null;
+
+async function getOrCreateSpeechWindow() {
+  if (speechWindowRef) return speechWindowRef;
+  const label = `speech-${instanceId}`;
+  
+  const allWindows = await getAllWebviewWindows();
+  let win = allWindows.find(w => w.label === label);
+  
+  if (!win) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    win = new WebviewWindow(label, {
+      url: `renderer/speech/index.html?id=${instanceId}`,
+      transparent: true,
+      decorations: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      width: 260,
+      height: 160,
+      shadow: false,
+    });
+  }
+  speechWindowRef = win;
+  return win;
+}
+
+async function syncSpeechWindowPosition() {
+  if (!speechWindowRef || !isSpeechVisible) return;
+  const pos = window.electronAPI.getLogicalPosition();
+  if (pos.x === null || pos.y === null) return;
+  
+  const safeScale = Number(currentScale) || 1.0;
+  const petWidth = Math.ceil(PETDEX_SPRITE.FRAME_WIDTH * safeScale);
+  
+  const speechW = 260;
+  const speechH = 160;
+  const newX = pos.x + (petWidth / 2) - (speechW / 2);
+  const newY = pos.y - speechH + 20; 
+  
+  const { LogicalPosition } = await import('@tauri-apps/api/window');
+  await speechWindowRef.setPosition(new LogicalPosition(newX, newY));
+}
+
+function isChosenToSpeak(seedStr: string): boolean {
+  if (!currentActivePets || currentActivePets.length === 0) return true;
+  const sortedIds = currentActivePets.map(p => p.id).sort();
+  const myIndex = sortedIds.indexOf(instanceId!);
+  if (myIndex === -1) return true;
+
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+    hash |= 0; 
+  }
+  const targetIndex = Math.abs(hash) % sortedIds.length;
+  return myIndex === targetIndex;
+}
 
 /**
  * Helper to pick a random item from an array using cryptographically strong random values
@@ -28,11 +89,11 @@ let suiMonitor: SuiMonitor | null = null;
 function pickUniqueRandom(opt: string | string[]): string {
   if (!Array.isArray(opt)) return opt;
   if (opt.length === 0) return '';
-  
+
   const array = new Uint32Array(1);
   window.crypto.getRandomValues(array);
   const randomIndex = array[0] % opt.length;
-  
+
   return opt[randomIndex];
 }
 
@@ -89,6 +150,7 @@ async function init(): Promise<void> {
 
   // 4. Initialize animation controllers and state machine
   const savedSettings: any = await window.electronAPI.getSettings();
+  currentActivePets = savedSettings?.activePets || [];
   const initialScale = Number(petData.scale || savedSettings?.scale) || 1.0;
   const isWalkingEnabled = savedSettings?.enableWalking !== false;
   currentLanguage = savedSettings?.language || 'en';
@@ -99,7 +161,7 @@ async function init(): Promise<void> {
   stateMachine.start();
 
   currentScale = initialScale;
-  
+
   // Force window to be interactive at startup
   window.electronAPI.setIgnoreMouseEvents(false);
   window.electronAPI.focus();
@@ -128,7 +190,7 @@ async function init(): Promise<void> {
     const randomBuffer = new Uint32Array(1);
     window.crypto.getRandomValues(randomBuffer);
     const delay = randomBuffer[0] % 1800; // 0 to 1.8s
-    
+
     setTimeout(() => {
       showSpeech(getRandomPingSpeech(), INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Ping');
     }, delay);
@@ -149,11 +211,12 @@ async function init(): Promise<void> {
   });
 
   (window.electronAPI as any).onPomoFinished((sessionType: string) => {
+    if (!isChosenToSpeak('pomo_' + sessionType)) return;
     const t = translations[currentLanguage];
     const randomBuffer = new Uint32Array(1);
     window.crypto.getRandomValues(randomBuffer);
     const delay = randomBuffer[0] % 2500;
-    
+
     setTimeout(() => {
       const choices = sessionType === 'focus' ? t.pomoFinishedWork : t.pomoFinishedBreak;
       const msg = pickUniqueRandom(choices);
@@ -166,9 +229,10 @@ async function init(): Promise<void> {
   // --- Settings Update Handling ---
   window.electronAPI.onSettingsUpdate(async (data: any) => {
     const { settings } = data;
+    currentActivePets = settings.activePets || [];
     currentLanguage = settings.language || 'en';
     console.log('[Overlay] Settings updated, language:', currentLanguage);
-    
+
     // Find this instance's specific configuration
     const myInstance = settings.activePets.find((p: any) => p.id === instanceId);
     if (myInstance) {
@@ -181,19 +245,27 @@ async function init(): Promise<void> {
   });
 
   // --- Intelligence & Sync ---
-  window.electronAPI.onPetSay((text: string) => {
-    // 1. Stricter sync check to prevent simultaneous speech
-    const timeSinceLastSpeech = Date.now() - lastGlobalSpeechTime;
-    if (timeSinceLastSpeech < INTERACTION.SPEECH_SYNC_COOLDOWN) return;
+  window.electronAPI.onPetSay((payload: string | { text: string; priority?: boolean }) => {
+    let text = '';
+    let priority = false;
+    if (typeof payload === 'object' && payload !== null) {
+      text = payload.text;
+      priority = !!payload.priority;
+    } else {
+      text = payload;
+    }
+
+    if (!isChosenToSpeak(text)) return;
+    
+    if (!priority) {
+      const timeSinceLastSpeech = Date.now() - lastGlobalSpeechTime;
+      if (timeSinceLastSpeech < INTERACTION.SPEECH_SYNC_COOLDOWN) return;
+    }
 
     const t = translations[currentLanguage];
-    
-    // 2. Diversification Logic: 
-    // If the backend sends a generic string, try to find if it belongs to a category 
-    // and pick a DIFFERENT random variant so pets don't say the exact same thing.
     let speechToSay = text;
     const categories = [
-      'intelWebYoutube', 'intelWebSocial', 'intelWebDev', 'intelWebAI', 
+      'intelWebYoutube', 'intelWebSocial', 'intelWebDev', 'intelWebAI',
       'intelWebDesign', 'intelAppCode', 'intelAppWeb', 'intelAppMusic',
       'intelAppChat', 'intelAppTerminal', 'intelAppDesign', 'intelAppMeeting',
       'intelAppProductivity', 'intelAppFinder', 'intelAppDefault'
@@ -202,25 +274,12 @@ async function init(): Promise<void> {
     for (const cat of categories) {
       const variants = t[cat];
       if (Array.isArray(variants) && variants.includes(text)) {
-        // Belong to this category! Pick a fresh one from the array.
         speechToSay = pickUniqueRandom(variants);
         break;
       }
     }
 
-    const randomBuffer = new Uint32Array(1);
-    window.crypto.getRandomValues(randomBuffer);
-    
-    // Increased delay range (0.2s - 3.2s) to ensure clear "winners" in the speech race
-    const delay = (randomBuffer[0] % 3000) + 200; 
-
-    setTimeout(() => {
-      // Final race-condition check
-      const updatedTimeSinceLast = Date.now() - lastGlobalSpeechTime;
-      if (updatedTimeSinceLast > 1000 && !isSpeechVisible) {
-        showSpeech(speechToSay, INTERACTION.SPEECH_DURATION_DEFAULT, false, 'Intel');
-      }
-    }, delay);
+    showSpeech(speechToSay, INTERACTION.SPEECH_DURATION_DEFAULT, priority, 'Intel');
   });
 
   window.electronAPI.onSomeoneSpeaking(() => {
@@ -234,57 +293,58 @@ async function init(): Promise<void> {
 
   // --- Blockchain Events ---
   window.electronAPI.onBlockchainEvent((event: any) => {
+    if (!isChosenToSpeak(JSON.stringify(event))) return;
     console.log('[Overlay] Blockchain event received:', event);
     console.log('[Overlay] Current Language:', currentLanguage);
-    
+
     const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
     const t = translations[lang];
     console.log('[Overlay] Using translation keys:', Object.keys(t).slice(0, 5), '...');
     console.log('[Overlay] Event type:', event.event_type);
     const amountStr = (event.amount / 1000000000).toFixed(3);
-    
+
     if (event.event_type === 'message') {
       stateMachine.forceState('happy');
       let msg = t.blockchainMessage || '{pet}: {message} (+{amount} {coin})';
       msg = msg.replace('{pet}', event.pet_slug || 'Someone')
-               .replace('{message}', event.message || '')
-               .replace('{amount}', amountStr)
-               .replace('{coin}', event.coin_type || 'SUI');
+        .replace('{message}', event.message || '')
+        .replace('{amount}', amountStr)
+        .replace('{coin}', event.coin_type || 'SUI');
       console.log('[Overlay] Showing blockchain message:', msg);
       showSpeech(msg, 7000, true, 'Blockchain:Message');
     } else if (event.event_type === 'bonk') {
       stateMachine.forceState('jump');
       let msg = t.blockchainBonk || '{pet} bonked me! (-{amount} {coin})';
       msg = msg.replace('{pet}', event.pet_slug || 'Someone')
-               .replace('{amount}', amountStr)
-               .replace('{coin}', event.coin_type || 'SUI');
+        .replace('{amount}', amountStr)
+        .replace('{coin}', event.coin_type || 'SUI');
       console.log('[Overlay] Showing blockchain bonk:', msg);
       showSpeech(msg, 5000, true, 'Blockchain:Bonk');
     } else if (event.event_type === 'receive_coin') {
       // If we just showed a message or bonk in this SAME tick, receive_coin should win
       stateMachine.forceState('happy');
-      
+
       const variations = t.blockchainReceiveCoin || [
         `Wow! Just received {amount} {coin}! 🚀`
       ];
-      
+
       let randomMsg = variations[Math.floor(Math.random() * variations.length)];
       randomMsg = randomMsg.replace('{amount}', amountStr)
-                           .replace('{coin}', event.coin_type || 'SUI');
-      
+        .replace('{coin}', event.coin_type || 'SUI');
+
       console.log('[Overlay] Showing blockchain receive:', randomMsg);
       showSpeech(randomMsg, 8000, true, 'Blockchain:Receive');
     } else if (event.event_type === 'send_coin') {
       stateMachine.forceState('jump'); // Maybe a bit surprised/active
-      
+
       const variations = t.blockchainSendCoin || [
         `Sent {amount} {coin}. 👋`
       ];
-      
+
       let randomMsg = variations[Math.floor(Math.random() * variations.length)];
       randomMsg = randomMsg.replace('{amount}', amountStr)
-                           .replace('{coin}', event.coin_type || 'SUI');
-      
+        .replace('{coin}', event.coin_type || 'SUI');
+
       console.log('[Overlay] Showing blockchain send:', randomMsg);
       showSpeech(randomMsg, 6000, true, 'Blockchain:Send');
     }
@@ -293,7 +353,7 @@ async function init(): Promise<void> {
   // --- Real-time Speech Sync (Event Driven) ---
   window.electronAPI.onWindowMoved((x: number, y: number) => {
     if (isSpeechVisible && currentSpeechText) {
-      updateSpeechOverlay(currentSpeechText, true);
+      syncSpeechWindowPosition();
     }
   });
 }
@@ -316,6 +376,11 @@ async function setupMasterElection() {
           console.log(`[Overlay] ${myLabel} elected as Master. Starting SuiMonitor.`);
           suiMonitor = new SuiMonitor();
         }
+        if (!securityAgent) {
+          console.log(`[Overlay] ${myLabel} elected as Master. Starting SecurityAgent.`);
+          securityAgent = new SecurityAgent();
+          securityAgent.start();
+        }
       } else {
         if (suiMonitor) {
           console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SuiMonitor.`);
@@ -323,6 +388,11 @@ async function setupMasterElection() {
           // and we can null it out.
           (suiMonitor as any).stopPolling?.();
           suiMonitor = null;
+        }
+        if (securityAgent) {
+          console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SecurityAgent.`);
+          securityAgent.stop();
+          securityAgent = null;
         }
       }
     } catch (err) {
@@ -332,7 +402,7 @@ async function setupMasterElection() {
 
   // Initial check
   await checkMaster();
-  
+
   // Re-elect every 10 seconds in case windows are closed/opened
   setInterval(checkMaster, 10000);
 }
@@ -349,20 +419,20 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
   canvas.addEventListener('mousedown', e => {
     if (e.button === 0) {
       e.preventDefault();
-      
+
       // 1. Instant response: focus and pause autonomous movement
       window.electronAPI.focus();
       controller.pauseMovement(true);
-      
+
       // 2. Native drag: buttery smooth and bypasses focus lag
       // Some systems may need a manual fallback if startDragging fails
       window.electronAPI.startDragging();
-      
+
       isDragging = true;
       wasDragged = false;
       startX = e.screenX;
       startY = e.screenY;
-      
+
       // 3. UI state
       stateMachine.forceState('drag');
       window.electronAPI.setIgnoreMouseEvents(false);
@@ -373,7 +443,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
     if (isDragging) {
       const dx = e.screenX - startX;
       const dy = e.screenY - startY;
-      
+
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         wasDragged = true;
         window.electronAPI.moveWindow(dx, dy);
@@ -389,7 +459,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
       stateMachine.transitionTo('idle');
       controller.resetPosition();
       controller.pauseMovement(false);
-      
+
       if (instanceId) {
         window.electronAPI.savePosition(instanceId);
       }
@@ -415,7 +485,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
     if (clickTimer) clearTimeout(clickTimer);
 
     const t = translations[currentLanguage];
-    
+
     if (clickCount === 1) {
       stateMachine.forceState('happy');
       showSpeech(pickUniqueRandom(t.hello));
@@ -446,7 +516,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
   // --- Click-through management removed for reliability ---
   // Since the window is now tightly fitted to the pet size, 
   // we no longer need complex ignore logic which was causing focus issues.
-  
+
   /**
    * Drag-and-drop file eating handlers using native Tauri events.
    */
@@ -488,22 +558,21 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
 /**
  * Updates the internal speech bubble text and visibility.
  */
-function updateSpeechOverlay(text: string, visible: boolean) {
-  const bubble = document.getElementById('speech-bubble');
-  if (!bubble) return;
-
-  if (visible) {
-    bubble.textContent = text;
-    bubble.classList.add('visible');
-    
-    // Position bubble above pet based on current pet height
-    const canvas = document.getElementById('pet-canvas');
-    if (canvas) {
-        const petHeight = canvas.offsetHeight;
-        bubble.style.bottom = `${petHeight + 10}px`;
+async function updateSpeechOverlay(text: string, visible: boolean) {
+  try {
+    const win = await getOrCreateSpeechWindow();
+    if (visible) {
+      await win.show();
+      await syncSpeechWindowPosition();
     }
-  } else {
-    bubble.classList.remove('visible');
+    // Gửi event sang speech window
+    window.electronAPI.broadcastPetEvent(`update-speech-${instanceId}`, { text, visible });
+    
+    if (!visible) {
+      setTimeout(() => win.hide(), 350);
+    }
+  } catch (err) {
+    console.error('Failed to update speech window:', err);
   }
 }
 
@@ -512,12 +581,24 @@ async function syncWindowSize(): Promise<void> {
   const petWidth = Math.ceil(PETDEX_SPRITE.FRAME_WIDTH * safeScale);
   const petHeight = Math.ceil(PETDEX_SPRITE.FRAME_HEIGHT * safeScale);
 
-  // Unified window size (320x320 set in Rust)
-  // We keep the internal canvas size updated
   const canvas = document.getElementById('pet-canvas') as HTMLCanvasElement;
   if (canvas) {
     canvas.style.width = `${petWidth}px`;
     canvas.style.height = `${petHeight}px`;
+  }
+
+  // Khung xanh bây giờ chỉ bao bọc đúng con Pet (khung đỏ)
+  const winWidth = petWidth;
+  const winHeight = petHeight;
+
+  try {
+    await window.electronAPI.resizeKeepBottom(winWidth, winHeight);
+  } catch (err) {
+    console.error('Failed to resize window:', err);
+  }
+  
+  if (isSpeechVisible) {
+    syncSpeechWindowPosition();
   }
 }
 
@@ -537,9 +618,10 @@ function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION
   isSpeechVisible = true;
   currentSpeechText = text;
   (window as any).isCurrentSpeechPriority = priority;
-  
+
   // Use separate speech window
   updateSpeechOverlay(text, true);
+  syncWindowSize(); // Phình to cửa sổ ra để chứa chữ
 
   // Notify other pets to stay silent
   window.electronAPI.notifySpeaking();
@@ -552,6 +634,7 @@ function hideSpeech(): void {
   currentSpeechText = '';
   (window as any).isCurrentSpeechPriority = false;
   updateSpeechOverlay('', false);
+  syncWindowSize(); // Thu gọn cửa sổ lại sát rịt con Pet
 
   if (speechTimeout) {
     clearTimeout(speechTimeout);
@@ -576,11 +659,11 @@ function setupRandomSpeech(stateMachine: PetStateMachine): void {
   setInterval(() => {
     // Only speak randomly if no one has spoken recently across all instances
     const timeSinceLastSpeech = Date.now() - lastGlobalSpeechTime;
-    
+
     if (!isSpeechVisible && !statusAlarming && timeSinceLastSpeech > INTERACTION.SPEECH_SYNC_COOLDOWN && Math.random() < INTERACTION.RANDOM_SPEECH_CHANCE) {
       const state = stateMachine.getState();
       const t = translations[currentLanguage];
-      
+
       if (state === 'sleep') {
         showSpeech('Zzz...');
       } else {

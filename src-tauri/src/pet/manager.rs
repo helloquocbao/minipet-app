@@ -50,11 +50,21 @@ pub struct UserSettings {
     pub sui_enabled: bool,
 }
 
-fn default_position() -> String { "bottom-right".to_string() }
-fn default_scale() -> f64 { 1.0 }
-fn default_true() -> bool { true }
-fn default_lang() -> String { "en".to_string() }
-fn default_sui_rpc() -> String { "https://sui-testnet.public.blastapi.io".to_string() }
+fn default_position() -> String {
+    "bottom-right".to_string()
+}
+fn default_scale() -> f64 {
+    1.0
+}
+fn default_true() -> bool {
+    true
+}
+fn default_lang() -> String {
+    "en".to_string()
+}
+fn default_sui_rpc() -> String {
+    "https://fullnode.mainnet.sui.io:443".to_string()
+}
 
 impl Default for UserSettings {
     fn default() -> Self {
@@ -71,7 +81,7 @@ impl Default for UserSettings {
             last_y: None,
             language: "en".to_string(),
             sui_address: "".to_string(),
-            sui_rpc_url: "https://sui-testnet.public.blastapi.io".to_string(),
+            sui_rpc_url: "https://fullnode.mainnet.sui.io:443".to_string(),
             sui_enabled: false,
         }
     }
@@ -177,10 +187,15 @@ impl PetManager {
     }
 
     pub fn get_pet_instance_config(&self, instance_id: &str) -> Option<serde_json::Value> {
-        let instance = self.settings.active_pets.iter().find(|i| i.id == instance_id)?;
-        let pet = self.pets.iter().find(|p| {
-            p.manifest.slug.as_deref() == Some(&instance.slug)
-        })?;
+        let instance = self
+            .settings
+            .active_pets
+            .iter()
+            .find(|i| i.id == instance_id)?;
+        let pet = self
+            .pets
+            .iter()
+            .find(|p| p.manifest.slug.as_deref() == Some(&instance.slug))?;
 
         let mut config = serde_json::to_value(&pet.manifest).ok()?;
         let obj = config.as_object_mut()?;
@@ -190,10 +205,7 @@ impl PetManager {
             "spritesheetPath".to_string(),
             serde_json::json!(pet.spritesheet_path.to_string_lossy().to_string()),
         );
-        obj.insert(
-            "scale".to_string(),
-            serde_json::json!(instance.scale),
-        );
+        obj.insert("scale".to_string(), serde_json::json!(instance.scale));
         Some(config)
     }
 
@@ -201,7 +213,11 @@ impl PetManager {
         if self.settings.active_pets.len() >= MAX_ACTIVE_PETS {
             return Err(format!("Maximum {} pets allowed", MAX_ACTIVE_PETS));
         }
-        if !self.pets.iter().any(|p| p.manifest.slug.as_deref() == Some(slug)) {
+        if !self
+            .pets
+            .iter()
+            .any(|p| p.manifest.slug.as_deref() == Some(slug))
+        {
             return Err("Pet not found".to_string());
         }
 
@@ -306,7 +322,7 @@ impl PetManager {
             inst.y = y;
             self.is_dirty = true;
         }
-        
+
         // Debounce: Only save to disk if it's been > 5 seconds OR if specifically requested
         if self.is_dirty && self.last_save_time.elapsed() > std::time::Duration::from_secs(5) {
             self.save_settings().await;
@@ -323,7 +339,7 @@ impl PetManager {
 
     pub async fn import_pet(&mut self, source_path: &str) -> Result<Vec<PetListItem>, String> {
         let mut source = PathBuf::from(source_path);
-        
+
         // 1. Smart Detection: If a file is selected (and it's not a zip), try its parent folder
         let is_zip = source.extension().map(|e| e == "zip").unwrap_or(false);
         if source.is_file() && !is_zip {
@@ -333,22 +349,29 @@ impl PetManager {
         }
 
         let extract_path = if is_zip {
-            let temp_dir = std::env::temp_dir().join(format!("minipet-import-{}", uuid::Uuid::new_v4()));
-            tokio::fs::create_dir_all(&temp_dir).await.map_err(|e| e.to_string())?;
+            let temp_dir =
+                std::env::temp_dir().join(format!("minipet-import-{}", uuid::Uuid::new_v4()));
+            tokio::fs::create_dir_all(&temp_dir)
+                .await
+                .map_err(|e| e.to_string())?;
 
             let file = std::fs::File::open(&source).map_err(|e| e.to_string())?;
             let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
             archive.extract(&temp_dir).map_err(|e| e.to_string())?;
 
             // Find pet.json recursively in ZIP
-            find_pet_json_dir(&temp_dir).await.ok_or("pet.json not found in ZIP")?
+            find_pet_json_dir(&temp_dir)
+                .await
+                .ok_or("pet.json not found in ZIP")?
         } else {
             // Folder import validation: Must have exactly 2 files (pet.json + spritesheet)
             if !source.is_dir() {
                 return Err("Selected path is not a valid directory or pet file".to_string());
             }
 
-            let mut entries = tokio::fs::read_dir(&source).await.map_err(|e| e.to_string())?;
+            let mut entries = tokio::fs::read_dir(&source)
+                .await
+                .map_err(|e| e.to_string())?;
             let mut file_count = 0;
             let mut has_json = false;
             let mut has_sprite = false;
@@ -360,7 +383,10 @@ impl PetManager {
                     let name = entry.file_name().to_string_lossy().to_lowercase();
                     if name == "pet.json" {
                         has_json = true;
-                    } else if name.ends_with(".png") || name.ends_with(".webp") || name.contains("spritesheet") {
+                    } else if name.ends_with(".png")
+                        || name.ends_with(".webp")
+                        || name.contains("spritesheet")
+                    {
                         has_sprite = true;
                     }
                 }
@@ -376,7 +402,9 @@ impl PetManager {
                 return Err(format!("Thư mục dư file! Yêu cầu duy nhất 2 file (pet.json và hình ảnh), nhưng tìm thấy {} file.", file_count));
             }
             if file_count < 2 {
-                return Err("Thư mục thiếu file! Yêu cầu đủ 2 file: pet.json và hình ảnh.".to_string());
+                return Err(
+                    "Thư mục thiếu file! Yêu cầu đủ 2 file: pet.json và hình ảnh.".to_string(),
+                );
             }
 
             source.clone()
@@ -388,19 +416,32 @@ impl PetManager {
             return Err("Không tìm thấy pet.json".to_string());
         }
 
-        let data = tokio::fs::read_to_string(&manifest_path).await.map_err(|e| e.to_string())?;
+        let data = tokio::fs::read_to_string(&manifest_path)
+            .await
+            .map_err(|e| e.to_string())?;
         let manifest: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
 
         let mut slug = manifest
             .get("slug")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| extract_path.file_name().unwrap_or_default().to_str().unwrap_or("pet"))
+            .unwrap_or_else(|| {
+                extract_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or("pet")
+            })
             .to_string();
 
         // Ensure uniqueness - check both memory and filesystem
         let original_slug = slug.clone();
         let mut counter = 1;
-        while self.pets.iter().any(|p| p.manifest.slug.as_deref() == Some(&slug)) || self.pets_dir.join(&slug).exists() {
+        while self
+            .pets
+            .iter()
+            .any(|p| p.manifest.slug.as_deref() == Some(&slug))
+            || self.pets_dir.join(&slug).exists()
+        {
             slug = format!("{}-{}", original_slug, counter);
             counter += 1;
         }
@@ -418,7 +459,9 @@ impl PetManager {
         }
 
         let target = self.pets_dir.join(slug);
-        tokio::fs::remove_dir_all(&target).await.map_err(|e| e.to_string())?;
+        tokio::fs::remove_dir_all(&target)
+            .await
+            .map_err(|e| e.to_string())?;
 
         self.settings.active_pets.retain(|p| p.slug != slug);
         if self.settings.active_pet_slug.as_deref() == Some(slug) {
@@ -427,7 +470,11 @@ impl PetManager {
 
         // Ensure at least one pet active
         if self.settings.active_pets.is_empty() {
-            let remaining: Vec<_> = self.pets.iter().filter(|p| p.manifest.slug.as_deref() != Some(slug)).collect();
+            let remaining: Vec<_> = self
+                .pets
+                .iter()
+                .filter(|p| p.manifest.slug.as_deref() != Some(slug))
+                .collect();
             if let Some(p) = remaining.first() {
                 let s = p.manifest.slug.clone().unwrap_or_default();
                 self.settings.active_pets.push(PetInstance {
@@ -515,8 +562,6 @@ impl PetManager {
     }
 }
 
-
-
 async fn find_pet_json_dir(dir: &PathBuf) -> Option<PathBuf> {
     let mut entries = tokio::fs::read_dir(dir).await.ok()?;
     while let Ok(Some(entry)) = entries.next_entry().await {
@@ -538,7 +583,9 @@ async fn find_pet_json_dir(dir: &PathBuf) -> Option<PathBuf> {
 }
 
 async fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
-    tokio::fs::create_dir_all(dst).await.map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(dst)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut entries = tokio::fs::read_dir(src).await.map_err(|e| e.to_string())?;
     while let Ok(Some(entry)) = entries.next_entry().await {
         let src_path = entry.path();
@@ -546,7 +593,9 @@ async fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> 
         if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
             Box::pin(copy_dir_recursive(&src_path, &dst_path)).await?;
         } else {
-            tokio::fs::copy(&src_path, &dst_path).await.map_err(|e| e.to_string())?;
+            tokio::fs::copy(&src_path, &dst_path)
+                .await
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(())

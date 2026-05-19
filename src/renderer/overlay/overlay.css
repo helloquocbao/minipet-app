@@ -17,10 +17,8 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Drag-over state: show a subtle highlight while a file is being dragged over */
-body.drag-active {
-  /* No visual change needed — pet animation handles the feedback */
-}
+/* Drag-over state: show a subtle highlight while a file is being dragged over.
+   No visual change needed — pet animation handles the feedback */
 
 #pet-canvas {
   position: absolute;
@@ -76,11 +74,11 @@ body.debug {
   
   background: rgba(255, 255, 255, 0.98);
   color: #1a1b2e;
-  padding: 10px 20px;
+  padding: 8px 16px;
   border-radius: 20px;
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.4;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   

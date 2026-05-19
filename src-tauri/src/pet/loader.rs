@@ -101,12 +101,7 @@ pub async fn scan_directory(dir: &Path) -> Vec<LoadedPet> {
         Err(_) => return pets,
     };
     while let Ok(Some(entry)) = entries.next_entry().await {
-        if entry
-            .file_type()
-            .await
-            .map(|t| t.is_dir())
-            .unwrap_or(false)
-        {
+        if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
             if let Some(pet) = load_pet(&entry.path()).await {
                 pets.push(pet);
             }
