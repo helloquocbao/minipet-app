@@ -5,6 +5,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { PhysicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 
 // --- Pet ---
 export const getInstalledPets = () => invoke('get_installed_pets');
@@ -32,12 +33,12 @@ export const setDragMode = (instanceId: string, enabled: boolean) =>
 export const moveWindow = async (deltaX: number, deltaY: number) => {
   const win = getCurrentWebviewWindow();
   const pos = await win.outerPosition();
-  await win.setPosition({ type: 'Physical', x: pos.x + Math.round(deltaX), y: pos.y + Math.round(deltaY) });
+  await win.setPosition(new PhysicalPosition(pos.x + Math.round(deltaX), pos.y + Math.round(deltaY)));
 };
 
 export const resizeWindow = async (width: number, height: number, _anchorBottom = true) => {
   const win = getCurrentWebviewWindow();
-  await win.setSize({ type: 'Logical', width: Math.max(50, Math.round(width)), height: Math.max(50, Math.round(height)) });
+  await win.setSize(new LogicalSize(Math.max(50, Math.round(width)), Math.max(50, Math.round(height))));
 };
 
 export const savePosition = (instanceId: string, x: number, y: number) =>

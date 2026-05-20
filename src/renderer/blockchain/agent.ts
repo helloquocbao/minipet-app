@@ -1,7 +1,7 @@
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 export class SecurityAgent {
-  private rpcUrl: string = 'https://fullnode.mainnet.sui.io:443'; 
+  private rpcUrl: string = 'https://fullnode.testnet.sui.io:443'; 
   private unlistenCb: UnlistenFn | null = null;
   
   // Từ điển các câu nói ngẫu nhiên
@@ -144,7 +144,7 @@ export class SecurityAgent {
           }
 
           // Check tài sản/NFTs sở hữu
-          const assetsResponse: any = await api.suiRpcCall('suix_getOwnedObjects', [{ owner: objectId }], this.rpcUrl);
+          const assetsResponse: any = await api.suiRpcCall('suix_getOwnedObjects', [objectId], this.rpcUrl);
           if (assetsResponse.result && assetsResponse.result.data) {
             isWallet = true;
             assetsCount = assetsResponse.result.data.length;

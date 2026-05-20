@@ -135,6 +135,15 @@ impl PetManager {
         self.copy_default_pets(resource_dir).await;
         self.pets = loader::scan_directory(&self.pets_dir).await;
 
+        // Retain only active pets that are either NFT pets or installed local pets
+        let installed_slugs: std::collections::HashSet<String> = self.pets
+            .iter()
+            .filter_map(|p| p.manifest.slug.clone())
+            .collect();
+        self.settings.active_pets.retain(|inst| {
+            inst.slug.starts_with("nft-") || installed_slugs.contains(&inst.slug)
+        });
+
         // Sanitize saved positions — reset if y >= 900 (likely off-screen on 1080p)
         for inst in &mut self.settings.active_pets {
             if inst.x < 0.0 || inst.y < 0.0 || inst.y >= 900.0 {
@@ -186,12 +195,97 @@ impl PetManager {
             .collect()
     }
 
-    pub fn get_pet_instance_config(&self, instance_id: &str) -> Option<serde_json::Value> {
+    pub async fn fetch_nft_details(&self, object_id: &str) -> Result<serde_json::Value, String> {
+        let client = reqwest::Client::new();
+        let rpc_url = "https://fullnode.testnet.sui.io:443";
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sui_getObject",
+            "params": [
+                object_id,
+                {
+                    "showType": true,
+                    "showContent": true,
+                    "showDisplay": true
+                }
+            ]
+        });
+
+        let res = client
+            .post(rpc_url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+        
+        if let Some(err) = json.get("error") {
+            return Err(err.get("message").and_then(|m| m.as_str()).unwrap_or("RPC error").to_string());
+        }
+
+        Ok(json)
+    }
+
+    pub async fn get_pet_instance_config(&self, instance_id: &str) -> Option<serde_json::Value> {
         let instance = self
             .settings
             .active_pets
             .iter()
             .find(|i| i.id == instance_id)?;
+
+        if instance.slug.starts_with("nft-") {
+            let object_id = instance.slug.strip_prefix("nft-")?;
+            let nft_details = self.fetch_nft_details(object_id).await.ok()?;
+            let data = nft_details.get("result")?.get("data")?;
+            let content = data.get("content")?;
+            let fields = content.get("fields")?;
+
+            let name = fields
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unnamed NFT");
+            let sprite_url = fields
+                .get("sprite_url")
+                .and_then(|v| v.as_str())
+                .or_else(|| fields.get("image_url").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            let level = fields
+                .get("level")
+                .map(|v| match v {
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => "1".to_string(),
+                })
+                .unwrap_or_else(|| "1".to_string());
+            let perfection = fields
+                .get("perfection_score")
+                .map(|v| match v {
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => "0".to_string(),
+                })
+                .unwrap_or_else(|| "0".to_string());
+            let perfection_val = perfection.parse::<f64>().unwrap_or(0.0) / 100.0;
+
+            let manifest = serde_json::json!({
+                "displayName": name,
+                "description": format!("Level: {} | Perfection: {:.2}%", level, perfection_val),
+                "slug": instance.slug,
+                "spritesheetPath": sprite_url,
+                "frameSize": {
+                    "width": 192,
+                    "height": 208
+                },
+                "columns": 8,
+                "rows": 9,
+                "scale": instance.scale,
+                "instanceId": instance.id
+            });
+            return Some(manifest);
+        }
+
         let pet = self
             .pets
             .iter()
@@ -213,7 +307,7 @@ impl PetManager {
         if self.settings.active_pets.len() >= MAX_ACTIVE_PETS {
             return Err(format!("Maximum {} pets allowed", MAX_ACTIVE_PETS));
         }
-        if !self
+        if !slug.starts_with("nft-") && !self
             .pets
             .iter()
             .any(|p| p.manifest.slug.as_deref() == Some(slug))

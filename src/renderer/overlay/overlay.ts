@@ -157,6 +157,9 @@ async function init(): Promise<void> {
 
   controller = new AnimationController(renderer, instanceId!);
   stateMachine = new PetStateMachine(controller, initialScale, isWalkingEnabled);
+  if (petData?.animations) {
+    stateMachine.updateAnimations(petData.animations);
+  }
   controller.setWalkingEnabled(isWalkingEnabled);
   stateMachine.start();
 

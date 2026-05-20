@@ -6,7 +6,7 @@ export class SuiMonitor {
   private lastEventCursor: any = null;
   private lastBalance: string | null = null;
   private pollInterval: any = null;
-  private packageId: string = '0x8bf42dbb049c416868bec9237b1250af343e63b69837b25af2b0bf2ad0832040';
+  private packageId: string = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
 
   // --- Multi-Agent State ---
   private flaggedNFTs: Set<string> = new Set();
@@ -85,7 +85,7 @@ export class SuiMonitor {
   private async checkBalance() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
+      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
       const response: any = await api.suiRpcCall('suix_getBalance', [this.address, '0x2::sui::SUI'], rpcUrl);
       
       if (response.error) throw new Error(response.error.message);
@@ -121,11 +121,13 @@ export class SuiMonitor {
   private async checkPhishingNFTs() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
-      const response: any = await api.suiRpcCall('suix_getOwnedObjects', [{
-        owner: this.address,
-        options: { showContent: true, showDisplay: true }
-      }], rpcUrl);
+      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
+        this.address,
+        {
+          options: { showContent: true, showDisplay: true }
+        }
+      ], rpcUrl);
 
       if (response.result && response.result.data) {
         const objects = response.result.data;
@@ -205,10 +207,10 @@ export class SuiMonitor {
       }
 
       // 2. DeFi Position check: look for Scallop/Navi smart contract objects in owned list
-      const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
-      const response: any = await api.suiRpcCall('suix_getOwnedObjects', [{
-        owner: this.address
-      }], rpcUrl);
+      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
+        this.address
+      ], rpcUrl);
 
       if (response.result && response.result.data) {
         const objects = response.result.data;
@@ -253,17 +255,18 @@ export class SuiMonitor {
   private async checkEvents() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
-      const response: any = await api.suiRpcCall('suix_queryEvents', [{
-        query: {
+      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const response: any = await api.suiRpcCall('suix_queryEvents', [
+        {
           MoveModule: {
             package: this.packageId,
             module: 'pet_nft'
           }
         },
-        limit: 10,
-        descendingOrder: true
-      }], rpcUrl);
+        null,
+        10,
+        true
+      ], rpcUrl);
 
       if (response.error) throw new Error(response.error.message);
       const data = response.result.data || [];

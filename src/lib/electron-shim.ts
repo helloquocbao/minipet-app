@@ -49,8 +49,10 @@ export function setupElectronShim() {
     getInstanceConfig: async (id: string) => {
       const config: any = await invoke('get_pet_instance_config', { instanceId: id });
       if (config?.spritesheetPath) {
-        // Load spritesheet as base64 data URL - works in both dev and production
-        config.spritesheetPath = await invoke('get_spritesheet_data', { slug: config.slug }).catch(() => '');
+        if (!config.spritesheetPath.startsWith('http')) {
+          // Load spritesheet as base64 data URL - works in both dev and production
+          config.spritesheetPath = await invoke('get_spritesheet_data', { slug: config.slug }).catch(() => '');
+        }
       }
       return config;
     },

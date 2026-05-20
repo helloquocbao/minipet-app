@@ -17,7 +17,7 @@ pub async fn get_pet_instance_config(
     instance_id: String,
 ) -> Result<serde_json::Value, String> {
     let mgr = state.pet_manager.lock().await;
-    mgr.get_pet_instance_config(&instance_id)
+    mgr.get_pet_instance_config(&instance_id).await
         .ok_or_else(|| "Instance not found".to_string())
 }
 

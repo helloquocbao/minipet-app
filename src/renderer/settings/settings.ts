@@ -15,7 +15,7 @@ const updateExplorerLink = (addr: string) => {
   const link = document.getElementById('explorer-link') as HTMLAnchorElement;
   if (link) {
     if (addr && addr.startsWith('0x')) {
-      link.href = `https://suivision.xyz/account/${addr}`;
+      link.href = `https://testnet.suivision.xyz/account/${addr}`;
       link.style.display = 'flex';
     } else {
       link.style.display = 'none';
@@ -53,6 +53,63 @@ function showToast(message: string, type: 'success' | 'error' = 'success'): void
   }, 3000);
 }
 
+async function loadNftPets(): Promise<PetListItem[]> {
+  if (!currentSettings || !currentSettings.suiEnabled || !currentSettings.suiAddress) {
+    return [];
+  }
+  try {
+    const addr = currentSettings.suiAddress;
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+    const PACKAGE_ID = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
+    const petType = `${PACKAGE_ID}::pet_nft::PetNFT`;
+
+    console.log('[Settings] Querying owned NFT pets from Sui testnet for:', addr);
+    const api = (window as any).electronAPI;
+    const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
+      addr,
+      {
+        filter: { StructType: petType },
+        options: { showType: true, showContent: true, showDisplay: true }
+      }
+    ], rpcUrl);
+
+    if (response.error) throw new Error(response.error.message);
+    const data = response.result.data || [];
+    console.log('[Settings] Found NFT pets:', data.length);
+
+    return data.map((obj: any) => {
+      const fields = obj.data?.content?.fields;
+      if (!fields) return null;
+      
+      const objectId = obj.data.objectId;
+      const name = fields.name || 'Unnamed NFT';
+      const imgUrl = fields.image_url || fields.sprite_url || '';
+      const level = fields.level || '1';
+      const perfection = fields.perfection_score || '0';
+      
+      return {
+        slug: `nft-${objectId}`,
+        displayName: name,
+        description: `Level: ${level} | Perfection: ${(Number(perfection) / 100).toFixed(2)}%`,
+        thumbnailPath: imgUrl,
+        isDefault: false,
+        isActive: false
+      };
+    }).filter(Boolean) as PetListItem[];
+  } catch (err) {
+    console.error('[Settings] Failed to fetch NFT pets:', err);
+    return [];
+  }
+}
+
+async function updateCachedPetList() {
+  const api = (window as any).electronAPI;
+  if (!api) return;
+  const localPets = await api.getPetList();
+  const nftPets = await loadNftPets();
+  cachedPetList = [...localPets, ...nftPets];
+}
+
 /**
  * Main initialization function for the settings UI.
  */
@@ -68,14 +125,15 @@ export async function initSettings(): Promise<void> {
   if (!api) return;
 
   try {
-    const [pets, settings] = await Promise.all([
+    const [_pets, settings] = await Promise.all([
       api.getPetList(),
       api.getSettings()
     ]);
 
-    cachedPetList = pets;
     currentSettings = settings;
     lastSettingsJson = JSON.stringify(settings);
+
+    await updateCachedPetList();
 
     // Initial Sync
     refreshUI();
@@ -84,7 +142,7 @@ export async function initSettings(): Promise<void> {
     setupPomodoro(settings.language || 'en');
 
     // Unified settings update listener
-    api.onSettingsUpdate((data: any) => {
+    api.onSettingsUpdate(async (data: any) => {
       const updated = data.settings;
       const updatedJson = JSON.stringify(updated);
       if (updatedJson === lastSettingsJson) return;
@@ -95,8 +153,12 @@ export async function initSettings(): Promise<void> {
 
       const langChanged = updated.language !== old?.language;
       const petsChanged = JSON.stringify(updated.activePets) !== JSON.stringify(old?.activePets);
+      const suiStateChanged = updated.suiEnabled !== old?.suiEnabled || updated.suiAddress !== old?.suiAddress;
 
-      if (langChanged || petsChanged) {
+      if (langChanged || petsChanged || suiStateChanged) {
+        if (suiStateChanged) {
+          await updateCachedPetList();
+        }
         requestAnimationFrame(() => refreshUI());
       } else {
         populateForm(updated);
@@ -158,7 +220,7 @@ function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
     name.className = 'pet-name';
     name.textContent = pet.displayName;
 
-    if (!pet.isDefault) {
+    if (!pet.isDefault && !pet.slug.startsWith('nft-')) {
       const delBtn = document.createElement('div');
       delBtn.className = 'delete-pet-btn';
       delBtn.innerHTML = '×';
@@ -241,8 +303,9 @@ function setupGlobalEventListeners() {
       e.stopPropagation();
       const t = translations[currentSettings.language as Language || 'en'];
       if (confirm(`${t.deletePet || 'Delete'} ${pet.displayName}?`)) {
-        cachedPetList = await api.deletePet(slug);
+        await api.deletePet(slug);
         thumbnailCache.delete(slug);
+        await updateCachedPetList();
         refreshUI();
       }
       return;
@@ -367,7 +430,7 @@ function setupGlobalEventListeners() {
     try {
       if (await api.importPet()) {
         showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
-        cachedPetList = await api.getPetList();
+        await updateCachedPetList();
         refreshUI();
       }
     } catch (err: any) { showToast(err.toString(), 'error'); }
@@ -377,7 +440,7 @@ function setupGlobalEventListeners() {
     try {
       if (await api.importFolder()) {
         showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
-        cachedPetList = await api.getPetList();
+        await updateCachedPetList();
         refreshUI();
       }
     } catch (err: any) { showToast(err.toString(), 'error'); }
@@ -460,7 +523,7 @@ async function refreshSuiBalance() {
   if (display) display.textContent = '...';
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
     console.log('[Settings] Fetching balance via Rust for:', addr);
     
     const response: any = await api.suiRpcCall('suix_getBalance', [addr, '0x2::sui::SUI'], rpcUrl);
@@ -510,35 +573,43 @@ async function refreshSuiAssets() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
     console.log('[Settings] Fetching assets via Rust for:', addr);
     
-    const response: any = await api.suiRpcCall('suix_getOwnedObjects', [{
-        owner: addr,
-        options: { showType: true, showContent: true, showDisplay: true }
-    }], rpcUrl);
+    const PACKAGE_ID = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
+    const petType = `${PACKAGE_ID}::pet_nft::PetNFT`;
+    const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
+        addr,
+        {
+          filter: { StructType: petType },
+          options: { showType: true, showContent: true, showDisplay: true }
+        }
+    ], rpcUrl);
 
     if (response.error) throw new Error(response.error.message);
     const data = response.result.data || [];
 
     if (!data || data.length === 0) {
-      container.innerHTML = `<div class="empty-state">No assets found in this wallet</div>`;
+      container.innerHTML = `<div class="empty-state">No project NFTs found in this wallet</div>`;
       return;
     }
 
     container.innerHTML = data.map((obj: any) => {
-      const type = obj.data?.type || 'Unknown';
-      const shortType = type.split('::').pop();
-      const name = obj.data?.display?.data?.name || shortType;
-      const isCoin = type.includes('0x2::coin::Coin');
-      const icon = isCoin ? '🪙' : '📦';
+      const fields = obj.data?.content?.fields || {};
+      const name = fields.name || obj.data?.display?.data?.name || 'PetNFT';
+      const level = fields.level || '1';
+      const imgUrl = fields.image_url || fields.sprite_url || '';
       
+      const iconHtml = imgUrl 
+        ? `<div class="asset-icon"><img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 6px;" /></div>`
+        : `<div class="asset-icon">🐾</div>`;
+
       return `
         <div class="asset-item">
-          <div class="asset-icon">${icon}</div>
+          ${iconHtml}
           <div class="asset-info">
-            <span class="asset-name">${name}</span>
-            <span class="asset-type">${shortType}</span>
+            <span class="asset-name">${name} (Lv. ${level})</span>
+            <span class="asset-type">PetNFT</span>
           </div>
         </div>
       `;
@@ -562,19 +633,20 @@ async function refreshSuiActivity() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('mainnet');
+    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
     console.log('[Settings] Fetching activity via Rust for:', addr);
 
-    const response: any = await api.suiRpcCall('suix_queryEvents', [{
-        query: {
+    const response: any = await api.suiRpcCall('suix_queryEvents', [
+        {
           MoveModule: {
-            package: '0x9953930b201460e1d5a71a06708fc7347952a1228221805f32be97e93892705a',
+            package: '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c',
             module: 'pet_nft'
           }
         },
-        limit: 5,
-        order: 'descending'
-    }], rpcUrl);
+        null,
+        5,
+        true
+    ], rpcUrl);
 
     if (response.error) throw new Error(response.error.message);
     const data = response.result.data || [];
