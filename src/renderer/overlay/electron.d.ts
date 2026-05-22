@@ -50,6 +50,10 @@ export interface ElectronAPI {
   eatFile: (paths: string[]) => Promise<{ success: boolean; error?: string }>;
   getPathForFile: (file: File) => string;
 
+  // --- Intelligence ---
+  getActiveApp: () => Promise<string | null>;
+  getBrowserTab: (browser: string) => Promise<string | null>;
+
   // --- Speech synchronization ---
   notifySpeaking: () => void;
   onSomeoneSpeaking: (cb: () => void) => void;

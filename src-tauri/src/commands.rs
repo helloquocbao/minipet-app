@@ -346,3 +346,85 @@ pub fn broadcast_pet_event(app: AppHandle, event: String, payload: serde_json::V
 pub fn debug_log(message: String) {
     eprintln!("[WebView] {}", message);
 }
+
+#[tauri::command]
+pub fn get_active_app() -> Option<String> {
+    crate::intelligence::get_active_app()
+}
+
+#[tauri::command]
+pub fn get_browser_tab(browser: String) -> Option<String> {
+    crate::intelligence::get_browser_tab(&browser)
+}
+
+// --- Local AI Commands ---
+
+#[tauri::command]
+pub fn check_model_exists(app: AppHandle) -> bool {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    model_path.exists()
+}
+
+#[tauri::command]
+pub async fn download_model(app: AppHandle) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    
+    if model_path.exists() {
+        return Ok(());
+    }
+    
+    let url = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+    
+    let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    let total_size = response.content_length().unwrap_or(0);
+    
+    use futures_util::StreamExt;
+    use std::io::Write;
+    
+    let mut file = std::fs::File::create(&model_path).map_err(|e| e.to_string())?;
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+    
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        
+        let progress = if total_size > 0 {
+            (downloaded as f64 / total_size as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let _ = app.emit("model-download-progress", serde_json::json!({
+            "downloaded": downloaded,
+            "total": total_size,
+            "progress": progress
+        }));
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn start_ai_server(app: AppHandle) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    
+    let bin_path = "/Users/sdj/VICENT-Project/minipet/minipet-tauri/src-tauri/bin/llama-server-aarch64-apple-darwin";
+    
+    std::process::Command::new(bin_path)
+        .arg("-m")
+        .arg(model_path)
+        .arg("--port")
+        .arg("8080")
+        .arg("-c")
+        .arg("2048")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+        
+    Ok(())
+}
+

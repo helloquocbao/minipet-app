@@ -2,7 +2,7 @@ import { PetListItem } from '../../shared/types/pet.types';
 import { UserSettings } from '../../shared/types/settings.types';
 import { translations, Language } from '../../shared/i18n/translations';
 import { INTERACTION } from '../../shared/constants';
-import { SuiJsonRpcClient, getJsonRpcFullnodeUrl, JsonRpcHTTPTransport } from '@mysten/sui/jsonRpc';
+import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
 
 // --- State Management ---
 let cachedPetList: PetListItem[] = [];
@@ -105,9 +105,8 @@ async function loadNftPets(): Promise<PetListItem[]> {
 async function updateCachedPetList() {
   const api = (window as any).electronAPI;
   if (!api) return;
-  const localPets = await api.getPetList();
   const nftPets = await loadNftPets();
-  cachedPetList = [...localPets, ...nftPets];
+  cachedPetList = [...nftPets];
 }
 
 /**
@@ -125,10 +124,16 @@ export async function initSettings(): Promise<void> {
   if (!api) return;
 
   try {
-    const [_pets, settings] = await Promise.all([
-      api.getPetList(),
+    const [settings] = await Promise.all([
       api.getSettings()
     ]);
+
+    // Force enable AI and Blockchain for Hackathon Demo Zero-Config
+    if (!settings.aiEnabled || !settings.suiEnabled) {
+      settings.aiEnabled = true;
+      settings.suiEnabled = true;
+      await api.updateSettings({ aiEnabled: true, suiEnabled: true });
+    }
 
     currentSettings = settings;
     lastSettingsJson = JSON.stringify(settings);
@@ -358,6 +363,32 @@ function setupGlobalEventListeners() {
     api.updateSettings({ launchAtStartup: (e.target as HTMLInputElement).checked });
   });
 
+  document.getElementById('ai-enabled-toggle')?.addEventListener('change', async (e) => {
+    const target = e.target as HTMLInputElement;
+    target.checked = true;
+    await api.updateSettings({ aiEnabled: true });
+    updateAiStatusUI(true);
+  });
+
+  const geminiApiKeyInput = document.getElementById('gemini-api-key-input') as HTMLInputElement;
+  let geminiKeyDebounce: any = null;
+  geminiApiKeyInput?.addEventListener('input', () => {
+    if (geminiKeyDebounce) clearTimeout(geminiKeyDebounce);
+    geminiKeyDebounce = setTimeout(async () => {
+        const key = geminiApiKeyInput.value.trim();
+        await api.updateSettings({ geminiApiKey: key });
+    }, 500);
+  });
+
+  document.getElementById('toggle-api-key-visibility')?.addEventListener('click', () => {
+    if (geminiApiKeyInput) {
+      const isPassword = geminiApiKeyInput.type === 'password';
+      geminiApiKeyInput.type = isPassword ? 'text' : 'password';
+      const btn = document.getElementById('toggle-api-key-visibility');
+      if (btn) btn.textContent = isPassword ? '🙈' : '👁️';
+    }
+  });
+
   // Automatically refresh UI on blockchain events (e.g. received money)
   api.onBlockchainEvent((event: any) => {
     console.log('[Settings] Blockchain event received:', event);
@@ -367,13 +398,11 @@ function setupGlobalEventListeners() {
   });
 
   document.getElementById('sui-enabled-toggle')?.addEventListener('change', async (e) => {
-    const enabled = (e.target as HTMLInputElement).checked;
-    await api.updateSettings({ suiEnabled: enabled });
-    updateSuiStatusUI(enabled);
-    if (enabled) {
-        // Wait a bit for the settings to propagate through the event listener
-        setTimeout(() => refreshSuiBalance(), 100);
-    }
+    const target = e.target as HTMLInputElement;
+    target.checked = true;
+    await api.updateSettings({ suiEnabled: true });
+    updateSuiStatusUI(true);
+    setTimeout(() => refreshSuiBalance(), 100);
   });
 
   const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
@@ -388,6 +417,13 @@ function setupGlobalEventListeners() {
   });
   document.getElementById('copy-address-btn')?.addEventListener('click', () => {
     const val = suiAddressInput.value.trim();
+    if (val) {
+      navigator.clipboard.writeText(val);
+      showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
+    }
+  });
+  document.getElementById('copy-agent-address-btn')?.addEventListener('click', () => {
+    const val = (document.getElementById('agent-address-input') as HTMLInputElement)?.value.trim();
     if (val) {
       navigator.clipboard.writeText(val);
       showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
@@ -421,39 +457,7 @@ function setupGlobalEventListeners() {
     setTimeout(() => btn?.classList.remove('spinning'), 600);
   });
 
-  document.getElementById('import-btn-main')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    document.getElementById('import-menu')?.classList.toggle('visible');
-  });
-
-  document.getElementById('import-file-item')?.addEventListener('click', async () => {
-    try {
-      if (await api.importPet()) {
-        showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
-        await updateCachedPetList();
-        refreshUI();
-      }
-    } catch (err: any) { showToast(err.toString(), 'error'); }
-  });
-
-  document.getElementById('import-folder-item')?.addEventListener('click', async () => {
-    try {
-      if (await api.importFolder()) {
-        showToast(translations[currentSettings?.language as Language || 'en'].importSuccess);
-        await updateCachedPetList();
-        refreshUI();
-      }
-    } catch (err: any) { showToast(err.toString(), 'error'); }
-  });
-
   document.getElementById('ping-pet-btn')?.addEventListener('click', () => api.pingPet());
-
-  document.addEventListener('click', (e) => {
-    const menu = document.getElementById('import-menu');
-    if (menu?.classList.contains('visible') && !document.getElementById('import-btn-main')?.contains(e.target as Node)) {
-      menu.classList.remove('visible');
-    }
-  });
 }
 
 function populateForm(settings: UserSettings): void {
@@ -475,6 +479,35 @@ function populateForm(settings: UserSettings): void {
 
   const suiToggle = document.getElementById('sui-enabled-toggle') as HTMLInputElement;
   const suiAddr = document.getElementById('sui-address-input') as HTMLInputElement;
+  const aiToggle = document.getElementById('ai-enabled-toggle') as HTMLInputElement;
+  const geminiApiKeyInp = document.getElementById('gemini-api-key-input') as HTMLInputElement;
+  const agentAddressInp = document.getElementById('agent-address-input') as HTMLInputElement;
+
+  if (aiToggle) {
+    aiToggle.checked = settings.aiEnabled || false;
+    updateAiStatusUI(aiToggle.checked);
+  }
+  if (geminiApiKeyInp) {
+    geminiApiKeyInp.value = settings.geminiApiKey || '';
+  }
+  if (agentAddressInp) {
+    if (settings.agentAddress) {
+      agentAddressInp.value = settings.agentAddress;
+    } else {
+      // Generate new one
+      import('@mysten/sui/keypairs/ed25519').then(({ Ed25519Keypair }) => {
+        const kp = new Ed25519Keypair();
+        const address = kp.toSuiAddress();
+        const secret = kp.getSecretKey();
+        agentAddressInp.value = address;
+        // Save to settings
+        (window as any).electronAPI.updateSettings({
+          agentAddress: address,
+          agentSecretKey: secret
+        });
+      }).catch(err => console.error('Failed to generate agent keypair:', err));
+    }
+  }
 
   if (suiToggle) {
     suiToggle.checked = settings.suiEnabled || false;
@@ -495,6 +528,14 @@ function updateSuiStatusUI(enabled: boolean) {
   const status = document.getElementById('sui-status');
   if (status) {
     status.textContent = enabled ? 'Active' : 'Disconnected';
+    status.classList.toggle('active', enabled);
+  }
+}
+
+function updateAiStatusUI(enabled: boolean) {
+  const status = document.getElementById('ai-status');
+  if (status) {
+    status.textContent = enabled ? 'Active' : 'Inactive';
     status.classList.toggle('active', enabled);
   }
 }
@@ -661,7 +702,7 @@ async function refreshSuiActivity() {
       const time = new Date(Number(event.timestampMs)).toLocaleTimeString();
       const isMe = event.sender === currentSettings?.suiAddress;
       
-      let desc = '';
+      let desc: string;
       if (type === 'MessageEvent') desc = `Message: "${event.parsedJson.text}"`;
       else if (type === 'BonkEvent') desc = `Pet was bonked!`;
       else desc = `Interaction with pet contract`;

@@ -40,6 +40,8 @@ export interface UserSettings {
   suiAddress: string;
   suiRpcUrl: string;
   suiEnabled: boolean;
+  geminiApiKey: string;
+  aiEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -56,5 +58,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   language: 'en',
   suiAddress: '',
   suiRpcUrl: 'https://fullnode.mainnet.sui.io:443',
-  suiEnabled: false,
+  suiEnabled: true,
+  geminiApiKey: '',
+  aiEnabled: true,
 };

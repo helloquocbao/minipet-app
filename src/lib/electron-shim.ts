@@ -9,14 +9,6 @@ import { LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 
 console.log('[Shim] electron-shim.ts module loaded');
 
-// Convert absolute file path to asset:// URL without double-encoding slashes
-function toAssetUrl(path: string): string {
-  if (!path) return path;
-  // Encode only special chars, NOT forward slashes
-  const encoded = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
-  return `asset://localhost${encoded.startsWith('/') ? '' : '/'}${encoded}`;
-}
-
 export function setupElectronShim() {
   console.log('[Shim] setupElectronShim() called');
   const win = getCurrentWebviewWindow();
@@ -25,11 +17,24 @@ export function setupElectronShim() {
   let cachedY: number | null = null;
 
   // Sync cache from actual window position on init
+  let cachedMonitorX = 0;
+  let cachedMonitorW = window.screen.availWidth;
+
+  const updateMonitor = async () => {
+    const m = await win.currentMonitor();
+    if (m) {
+      const dpr = window.devicePixelRatio || 1;
+      cachedMonitorX = m.position.x / dpr;
+      cachedMonitorW = m.size.width / dpr;
+    }
+  };
+
   win.outerPosition().then(pos => {
     const dpr = window.devicePixelRatio || 1;
     cachedX = pos.x / dpr;
     cachedY = pos.y / dpr;
   });
+  updateMonitor();
 
 
   console.log('[Shim] Setting window.electronAPI');
@@ -156,6 +161,7 @@ export function setupElectronShim() {
       invoke('save_position', { instanceId, x: finalX, y: finalY });
     },
     getLogicalPosition: () => ({ x: cachedX, y: cachedY }),
+    getMonitorBounds: () => ({ x: cachedMonitorX, width: cachedMonitorW }),
 
     // --- Events ---
     onSettingsUpdate: (cb: (data: any) => void) => {
@@ -174,6 +180,7 @@ export function setupElectronShim() {
     onSomeoneSpeaking: (cb: () => void) => { listen('pet:someone-speaking', () => cb()); },
     onWindowMoved: (cb: (x: number, y: number) => void) => {
       win.onMoved((event) => {
+        updateMonitor();
         const pos = event.payload;
         const dpr = window.devicePixelRatio || 1;
         cachedX = pos.x / dpr;
@@ -194,6 +201,10 @@ export function setupElectronShim() {
     eatFile: (paths: string[]) => invoke('eat_files', { paths }),
     getPathForFile: (file: File) => (file as any).path || '',
 
+    // --- Intelligence ---
+    getActiveApp: () => invoke('get_active_app'),
+    getBrowserTab: (browser: string) => invoke('get_browser_tab', { browser }),
+
     onDragDrop: (cb: (type: string, paths: string[]) => void) => {
       win.onDragDropEvent((event) => {
         if (event.payload.type === 'enter') cb('enter', event.payload.paths);
@@ -207,6 +218,9 @@ export function setupElectronShim() {
     startAlarm: () => invoke('broadcast_pet_event', { event: 'pet:start-alarm', payload: {} }),
     stopAlarm: () => invoke('broadcast_pet_event', { event: 'pet:stop-alarm', payload: {} }),
     notifySpeaking: () => invoke('broadcast_pet_event', { event: 'pet:someone-speaking', payload: {} }),
+    onCustomEvent: (eventName: string, cb: (payload: any) => void) => {
+      listen(eventName, (e) => cb(e.payload));
+    },
     broadcastPetEvent: (event: string, payload: any) => 
       invoke('broadcast_pet_event', { event, payload })
         .catch(err => console.error(`[Shim] broadcastPetEvent failed for ${event}:`, err)),

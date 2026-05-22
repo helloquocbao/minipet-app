@@ -15,8 +15,6 @@ let speechTimeout: NodeJS.Timeout | null = null;
 let currentLanguage: Language = 'en';
 let instanceId: string | null = null;
 let lastGlobalSpeechTime = 0;
-let isExternalDragging = false;
-let lastIgnoreState = true;
 let controller: AnimationController;
 let stateMachine: PetStateMachine;
 let currentSpeechText = '';
@@ -24,6 +22,9 @@ let suiMonitor: SuiMonitor | null = null;
 let securityAgent: SecurityAgent | null = null;
 let currentActivePets: any[] = [];
 let speechWindowRef: any = null;
+let lastContextKey = '';
+let lastCommentTime = 0;
+let isChatActive = false;
 
 async function getOrCreateSpeechWindow() {
   if (speechWindowRef) return speechWindowRef;
@@ -209,7 +210,7 @@ async function init(): Promise<void> {
     stateMachine.stopAlarm();
   });
 
-  window.electronAPI.onPomoTick((state: any) => {
+  window.electronAPI.onPomoTick((_state: any) => {
     // Regular tick updates (currently handled by settings window)
   });
 
@@ -228,6 +229,7 @@ async function init(): Promise<void> {
   });
 
   setupRandomSpeech(stateMachine);
+  setupContextMonitoring();
 
   // --- Settings Update Handling ---
   window.electronAPI.onSettingsUpdate(async (data: any) => {
@@ -249,7 +251,7 @@ async function init(): Promise<void> {
 
   // --- Intelligence & Sync ---
   window.electronAPI.onPetSay((payload: string | { text: string; priority?: boolean }) => {
-    let text = '';
+    let text: string;
     let priority = false;
     if (typeof payload === 'object' && payload !== null) {
       text = payload.text;
@@ -267,18 +269,24 @@ async function init(): Promise<void> {
 
     const t = translations[currentLanguage];
     let speechToSay = text;
-    const categories = [
-      'intelWebYoutube', 'intelWebSocial', 'intelWebDev', 'intelWebAI',
-      'intelWebDesign', 'intelAppCode', 'intelAppWeb', 'intelAppMusic',
-      'intelAppChat', 'intelAppTerminal', 'intelAppDesign', 'intelAppMeeting',
-      'intelAppProductivity', 'intelAppFinder', 'intelAppDefault'
-    ];
 
-    for (const cat of categories) {
-      const variants = t[cat];
-      if (Array.isArray(variants) && variants.includes(text)) {
-        speechToSay = pickUniqueRandom(variants);
-        break;
+    if (text in t && Array.isArray(t[text])) {
+      speechToSay = pickUniqueRandom(t[text]);
+    } else {
+      const categories = [
+        'intelWebYoutube', 'intelWebSocial', 'intelWebDev', 'intelWebAI',
+        'intelWebDesign', 'intelAppCode', 'intelAppWeb', 'intelAppMusic',
+        'intelAppChat', 'intelAppTerminal', 'intelAppDesign', 'intelAppMeeting',
+        'intelAppProductivity', 'intelAppFinder', 'intelAppDefault',
+        'intelTimeLate', 'intelTimeLunch'
+      ];
+
+      for (const cat of categories) {
+        const variants = t[cat];
+        if (Array.isArray(variants) && variants.includes(text)) {
+          speechToSay = pickUniqueRandom(variants);
+          break;
+        }
       }
     }
 
@@ -354,11 +362,80 @@ async function init(): Promise<void> {
   });
 
   // --- Real-time Speech Sync (Event Driven) ---
-  window.electronAPI.onWindowMoved((x: number, y: number) => {
+  window.electronAPI.onWindowMoved((_x: number, _y: number) => {
     if (isSpeechVisible && currentSpeechText) {
       syncSpeechWindowPosition();
     }
   });
+
+  // --- AI Chat Events ---
+  (window.electronAPI as any).onCustomEvent(`chat-mode-toggle-${instanceId}`, (payload: any) => {
+    if (payload && payload.active === false) {
+      toggleChatMode(false);
+    }
+  });
+
+  (window.electronAPI as any).onCustomEvent(`user-chat-submit-${instanceId}`, (payload: any) => {
+    if (payload && payload.text) {
+      handleLocalChat(payload.text);
+    }
+  });
+
+  // --- Local AI Bootup Logic ---
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { listen } = await import('@tauri-apps/api/event');
+  
+  try {
+    const hasModel = await invoke('check_model_exists');
+    if (!hasModel) {
+      const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+      const t = translations[lang];
+      
+      let initialMsg = t.modelDownloading || "Downloading brain...";
+      initialMsg = initialMsg
+        .replace('{percent}', '0.0')
+        .replace('{downloaded}', '0.0')
+        .replace('{total}', '398.0');
+      showSpeech(initialMsg, 999999, true, 'System');
+      
+      let lastPercentInt = -1;
+      const unlisten = await listen('model-download-progress', (event: any) => {
+        const payload = event.payload as any;
+        const percentNum = payload.progress;
+        const percentInt = Math.floor(percentNum);
+        
+        if (percentInt !== lastPercentInt) {
+          lastPercentInt = percentInt;
+          const percentStr = percentNum.toFixed(1);
+          const downloadedMB = (payload.downloaded / 1048576).toFixed(1);
+          const totalMB = (payload.total / 1048576).toFixed(1);
+          
+          const currentLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+          const currentT = translations[currentLang];
+          
+          let progressMsg = currentT.modelDownloading || "Downloading brain...";
+          progressMsg = progressMsg
+            .replace('{percent}', percentStr)
+            .replace('{downloaded}', downloadedMB)
+            .replace('{total}', totalMB);
+            
+          showSpeech(progressMsg, 999999, true, 'System');
+        }
+      });
+      
+      await invoke('download_model');
+      unlisten();
+      
+      const postLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+      const postT = translations[postLang];
+      showSpeech(postT.modelDownloadComplete || "Tải xong rồi! Đang khởi động não...", 4000, true, 'System');
+    }
+    
+    await invoke('start_ai_server');
+    console.log("[Local AI] Server started on port 8080");
+  } catch (err) {
+    console.error("[Local AI] Boot failed:", err);
+  }
 }
 
 /**
@@ -387,8 +464,6 @@ async function setupMasterElection() {
       } else {
         if (suiMonitor) {
           console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SuiMonitor.`);
-          // SuiMonitor currently doesn't have a destroy, but it will stop polling if we lose master status
-          // and we can null it out.
           (suiMonitor as any).stopPolling?.();
           suiMonitor = null;
         }
@@ -493,8 +568,8 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
       stateMachine.forceState('happy');
       showSpeech(pickUniqueRandom(t.hello));
     } else if (clickCount === 2) {
-      stateMachine.forceState('jump');
-      showSpeech(pickUniqueRandom(t.exercise));
+      conversationHistory = [];
+      toggleChatMode(true);
     } else if (clickCount >= 3) {
       if (stateMachine.getWalkingEnabled()) {
         stateMachine.forceState('run');
@@ -525,13 +600,10 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
    */
   window.electronAPI.onDragDrop(async (type: string, paths: string[]) => {
     if (type === 'enter') {
-      isExternalDragging = true;
       stateMachine.forceState('jump');
     } else if (type === 'leave') {
-      isExternalDragging = false;
       stateMachine.transitionTo('idle');
     } else if (type === 'drop') {
-      isExternalDragging = false;
 
       if (!paths || paths.length === 0) {
         stateMachine.transitionTo('idle');
@@ -610,6 +682,10 @@ async function syncWindowSize(): Promise<void> {
  */
 function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT, priority: boolean = false, source: string = 'unknown'): void {
   console.log(`[Overlay] showSpeech from ${source}: "${text}" (priority: ${priority})`);
+  if (isChatActive) {
+    console.log('[Overlay] Skipping speech because chat mode is active.');
+    return;
+  }
   if (speechTimeout) clearTimeout(speechTimeout);
   if (!priority && isSpeechVisible) {
     if ((window as any).isCurrentSpeechPriority) {
@@ -629,10 +705,23 @@ function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION
   // Notify other pets to stay silent
   window.electronAPI.notifySpeaking();
 
-  speechTimeout = setTimeout(hideSpeech, duration);
+  if (!isChatActive) {
+    speechTimeout = setTimeout(hideSpeech, duration);
+  }
+}
+
+function toggleChatMode(active: boolean) {
+  isChatActive = active;
+  if (!active) {
+    hideSpeech();
+  }
+  const t = translations[currentLanguage] || translations['en'];
+  const welcomeText = t.askMeAnything || 'Ask me anything! 🧠';
+  (window.electronAPI as any).broadcastPetEvent(`chat-mode-${instanceId}`, { active, welcomeText });
 }
 
 function hideSpeech(): void {
+  isChatActive = false;
   isSpeechVisible = false;
   currentSpeechText = '';
   (window as any).isCurrentSpeechPriority = false;
@@ -643,6 +732,8 @@ function hideSpeech(): void {
     clearTimeout(speechTimeout);
     speechTimeout = null;
   }
+  
+  (window.electronAPI as any).broadcastPetEvent(`chat-mode-${instanceId}`, { active: false });
 }
 
 /**
@@ -676,6 +767,393 @@ function setupRandomSpeech(stateMachine: PetStateMachine): void {
     }
   }, INTERACTION.RANDOM_SPEECH_INTERVAL);
 }
+
+function getSpeechCategory(appName: string, tabTitle: string | null): string {
+  const appLower = appName.toLowerCase();
+  
+  // 1. If it's a browser, check the tab title first
+  if (
+    appLower.includes('chrome') ||
+    appLower.includes('safari') ||
+    appLower.includes('arc') ||
+    appLower.includes('firefox') ||
+    appLower.includes('brave') ||
+    appLower.includes('browser')
+  ) {
+    if (tabTitle) {
+      const tabLower = tabTitle.toLowerCase();
+      if (tabLower.includes('youtube')) return 'intelWebYoutube';
+      if (
+        tabLower.includes('facebook') ||
+        tabLower.includes('twitter') ||
+        tabLower.includes('x.com') ||
+        tabLower.includes('reddit') ||
+        tabLower.includes('instagram') ||
+        tabLower.includes('linkedin') ||
+        tabLower.includes('tiktok')
+      ) {
+        return 'intelWebSocial';
+      }
+      if (
+        tabLower.includes('github') ||
+        tabLower.includes('stack overflow') ||
+        tabLower.includes('stackoverflow') ||
+        tabLower.includes('npm') ||
+        tabLower.includes('localhost') ||
+        tabLower.includes('docs') ||
+        tabLower.includes('documentation') ||
+        tabLower.includes('sui')
+      ) {
+        return 'intelWebDev';
+      }
+      if (
+        tabLower.includes('chatgpt') ||
+        tabLower.includes('claude') ||
+        tabLower.includes('gemini') ||
+        tabLower.includes('openai') ||
+        tabLower.includes('v0.dev')
+      ) {
+        return 'intelWebAI';
+      }
+      if (
+        tabLower.includes('figma') ||
+        tabLower.includes('canva') ||
+        tabLower.includes('dribbble') ||
+        tabLower.includes('behance')
+      ) {
+        return 'intelWebDesign';
+      }
+    }
+    return 'intelAppWeb';
+  }
+
+  // 2. Otherwise, check the app name
+  if (
+    appLower.includes('visual studio code') ||
+    appLower.includes('vscode') ||
+    appLower.includes('code') ||
+    appLower.includes('xcode') ||
+    appLower.includes('cursor') ||
+    appLower.includes('intellij') ||
+    appLower.includes('android studio') ||
+    appLower.includes('sublime')
+  ) {
+    return 'intelAppCode';
+  }
+  if (
+    appLower.includes('spotify') ||
+    appLower.includes('music') ||
+    appLower.includes('podcast')
+  ) {
+    return 'intelAppMusic';
+  }
+  if (
+    appLower.includes('slack') ||
+    appLower.includes('discord') ||
+    appLower.includes('telegram') ||
+    appLower.includes('whatsapp') ||
+    appLower.includes('messages') ||
+    appLower.includes('signal')
+  ) {
+    return 'intelAppChat';
+  }
+  if (
+    appLower.includes('terminal') ||
+    appLower.includes('iterm') ||
+    appLower.includes('warp') ||
+    appLower.includes('alacritty') ||
+    appLower.includes('console')
+  ) {
+    return 'intelAppTerminal';
+  }
+  if (
+    appLower.includes('figma') ||
+    appLower.includes('photoshop') ||
+    appLower.includes('illustrator') ||
+    appLower.includes('sketch') ||
+    appLower.includes('design')
+  ) {
+    return 'intelAppDesign';
+  }
+  if (
+    appLower.includes('zoom') ||
+    appLower.includes('teams') ||
+    appLower.includes('meet') ||
+    appLower.includes('webex')
+  ) {
+    return 'intelAppMeeting';
+  }
+  if (
+    appLower.includes('notion') ||
+    appLower.includes('obsidian') ||
+    appLower.includes('notes') ||
+    appLower.includes('calendar') ||
+    appLower.includes('word') ||
+    appLower.includes('excel') ||
+    appLower.includes('powerpoint')
+  ) {
+    return 'intelAppProductivity';
+  }
+  if (appLower.includes('finder') || appLower.includes('files')) {
+    return 'intelAppFinder';
+  }
+
+  return 'intelAppDefault';
+}
+
+function setupContextMonitoring(): void {
+  setInterval(async () => {
+    // Only the elected Master window should poll the active app
+    if (!suiMonitor) {
+      return;
+    }
+
+    try {
+      const activeApp = await window.electronAPI.getActiveApp();
+      if (!activeApp) return;
+
+      let browserTab: string | null = null;
+      const appLower = activeApp.toLowerCase();
+      if (
+        appLower.includes('chrome') ||
+        appLower.includes('safari') ||
+        appLower.includes('arc') ||
+        appLower.includes('firefox') ||
+        appLower.includes('brave') ||
+        appLower.includes('browser')
+      ) {
+        browserTab = await window.electronAPI.getBrowserTab(activeApp);
+      }
+
+      // Check for time-based contexts first (lunch or late night)
+      const now = new Date();
+      const hour = now.getHours();
+      const min = now.getMinutes();
+      let category = '';
+
+      if (hour >= 23 || hour < 5) {
+        category = 'intelTimeLate';
+      } else if ((hour === 11 && min >= 30) || (hour === 12) || (hour === 13 && min === 0)) {
+        category = 'intelTimeLunch';
+      } else {
+        category = getSpeechCategory(activeApp, browserTab);
+      }
+
+      const contextKey = `${category}_${activeApp}_${browserTab || ''}`;
+      const nowTime = Date.now();
+      
+      // Comment if:
+      // 1. Context changed and last comment was > 15s ago
+      // 2. Same context and last comment was > 120s ago
+      if ((contextKey !== lastContextKey && nowTime - lastCommentTime > 15000) || 
+          (nowTime - lastCommentTime > 120000)) {
+        
+        lastContextKey = contextKey;
+        lastCommentTime = nowTime;
+
+        // Broadcast the category key to all pet windows
+        window.electronAPI.broadcastPetEvent('pet:say', { text: category, priority: false });
+      }
+    } catch (err) {
+      console.error('[ContextMonitor] Error polling active app:', err);
+    }
+  }, 5000);
+}
+
+let toolsSupported = true;
+const localChatHistory: any[] = [
+  { role: "system", content: "You are MiniPet, a helpful virtual desktop pet assistant on macOS. Keep your answers extremely short and concise (under 2 sentences). You must use tools to help user. Answer in Vietnamese." }
+];
+
+async function handleLocalChat(userText: string) {
+  const savedSettings: any = await window.electronAPI.getSettings();
+
+  const FAST_TRANSFER_WALLETS = [
+    "0x1230000000000000000000000000000000000000000000000000000000000456",
+    "0xabc0000000000000000000000000000000000000000000000000000000000def"
+  ];
+  
+  try {
+    localChatHistory.push({ role: "user", content: userText });
+
+    const payload: any = {
+      model: "qwen2.5-0.5b.gguf",
+      messages: localChatHistory
+    };
+
+    if (toolsSupported) {
+      payload.tools = [
+        {
+          type: "function",
+          function: {
+            name: "check_wallet_balance",
+            description: "Check the SUI wallet balance.",
+            parameters: { type: "object", properties: {} }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "set_pomodoro_timer",
+            description: "Start a Pomodoro focus session.",
+            parameters: { 
+              type: "object", 
+              properties: { focus_minutes: { type: "number" } },
+              required: ["focus_minutes"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "transfer_sui",
+            description: "Transfer SUI. Amount is in SUI.",
+            parameters: { 
+              type: "object", 
+              properties: { 
+                recipient_address: { type: "string" },
+                amount: { type: "number" },
+                confirmed: { type: "boolean" }
+              },
+              required: ["recipient_address", "amount"]
+            }
+          }
+        }
+      ];
+      payload.tool_choice = "auto";
+    }
+
+    let response = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok && toolsSupported) {
+      let errMsg = "";
+      try {
+        const errText = await response.clone().text().catch(() => "");
+        console.warn("[Local AI] Error response body:", errText);
+        errMsg = errText;
+        try {
+          const errData = JSON.parse(errText);
+          errMsg = errData?.message || errData?.error?.message || errText || "";
+        } catch { /* empty */ }
+      } catch (e) {
+        console.error("[Local AI] Failed to read error response:", e);
+      }
+
+      if (response.status === 500 || response.status === 400 || errMsg.includes("tools") || errMsg.includes("param")) {
+        console.warn("[Local AI] Tools parameter not supported or caused error. Retrying and falling back to text-only mode. Error:", errMsg);
+        toolsSupported = false;
+        delete payload.tools;
+        delete payload.tool_choice;
+        response = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
+    }
+
+    const data = await response.json();
+    const message = data.choices[0].message;
+    
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      localChatHistory.push(message);
+      
+      const call = message.tool_calls[0];
+      const fnName = call.function.name;
+      const args = JSON.parse(call.function.arguments);
+      
+      let toolResult = "";
+      if (fnName === "check_wallet_balance") {
+        if (!savedSettings.walletAddress) {
+          toolResult = "No wallet configured.";
+        } else {
+          try {
+            const rpcUrl = "https://fullnode.testnet.sui.io:443"; 
+            const balRes: any = await window.electronAPI.suiRpcCall("suix_getBalance", [savedSettings.walletAddress], rpcUrl);
+            const balance = parseInt(balRes?.result?.totalBalance || "0") / 1_000_000_000;
+            toolResult = `Balance is ${balance.toFixed(2)} SUI`;
+          } catch { toolResult = "Failed to fetch balance."; }
+        }
+      } else if (fnName === "set_pomodoro_timer") {
+        const mins = args.focus_minutes || 25;
+        window.electronAPI.startPomo(mins, 5);
+        toolResult = `Started Pomodoro timer for ${mins} minutes.`;
+      } else if (fnName === "transfer_sui") {
+        if (!savedSettings.agentSecretKey) {
+          toolResult = "No AI Agent burner wallet configured.";
+        } else {
+          try {
+            const recipient = args.recipient_address;
+            const amount = args.amount;
+            const confirmed = args.confirmed;
+            
+            if (!recipient || !amount) {
+              toolResult = "Missing recipient or amount.";
+            } else {
+              const isWhitelisted = FAST_TRANSFER_WALLETS.includes(recipient);
+              if (!isWhitelisted && !confirmed) {
+                toolResult = "Recipient is not in the FAST_TRANSFER_WALLETS list. You MUST ask user: 'Địa chỉ ví này hơi lạ, bạn có chắc chắn muốn chuyển không? Hãy chat \"oke\" để xác nhận nhé!'";
+              } else {
+                const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+                const { SuiClient, getFullnodeUrl } = await import('@mysten/sui/client');
+                const { Transaction } = await import('@mysten/sui/transactions');
+                
+                const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
+                const client = new SuiClient({ url: getFullnodeUrl('testnet') });
+                
+                const tx = new Transaction();
+                const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
+                tx.transferObjects([coin], recipient);
+                
+                const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                toolResult = `Successfully transferred ${amount} SUI. Transaction digest: ${result.digest}`;
+              }
+            }
+          } catch(e: any) {
+            toolResult = `Transfer failed: ${e.message || e.toString()}`;
+          }
+        }
+      } else {
+        toolResult = "Unknown function.";
+      }
+      
+      localChatHistory.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: toolResult
+      });
+      
+      const nextPayload = {
+        model: "qwen2.5-0.5b.gguf",
+        messages: localChatHistory,
+      };
+      
+      const nextResponse = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextPayload)
+      });
+      
+      const nextData = await nextResponse.json();
+      const finalMessage = nextData.choices[0].message;
+      localChatHistory.push(finalMessage);
+      
+      (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: finalMessage.content });
+    } else {
+      localChatHistory.push(message);
+      (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: message.content });
+    }
+    
+  } catch (err: any) {
+    console.error("Local AI error:", err);
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: "Oops, bộ não siêu nhỏ của tớ chưa sẵn sàng." });
+  }
+}
+
 
 init().catch(console.error);
 

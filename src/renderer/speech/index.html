@@ -38,6 +38,26 @@
       opacity: 1;
       transform: translateY(0);
     }
+    #bubble.chat-active {
+      width: 240px;
+      text-align: left;
+    }
+    #chat-input {
+      width: 100%;
+      border: none;
+      outline: none;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 11px;
+      color: #1a1b2e;
+      margin-top: 6px;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+    #chat-input::placeholder {
+      color: rgba(26, 27, 46, 0.45);
+    }
     #bubble::after {
       content: '';
       position: absolute;
@@ -51,7 +71,12 @@
   </style>
 </head>
 <body>
-  <div id="bubble">...</div>
+  <div id="bubble">
+    <div id="speech-text">...</div>
+    <div id="chat-container" style="display: none;">
+      <input type="text" id="chat-input" placeholder="Chat with pet..." />
+    </div>
+  </div>
   <script type="module" src="./speech.ts"></script>
 </body>
 </html>

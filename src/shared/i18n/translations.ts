@@ -44,6 +44,11 @@ export const translations: Record<Language, any> = {
     noActivity: 'No recent activity detected',
     viewOnExplorer: 'View on Explorer',
     addressCopied: 'Address copied to clipboard!',
+    aiAgent: 'AI Agent',
+    aiAgentSettings: 'AI Agent Settings',
+    aiCompanion: 'AI Chat Companion',
+    aiHint: 'Enable Gemini-powered AI chat and smart context tool-calling.',
+    geminiApiKey: 'Gemini API Key',
     statusIdle: 'Ready',
     statusFocus: 'ACTIVE: FOCUSING',
     statusBreak: 'ACTIVE: RESTING',
@@ -123,6 +128,7 @@ export const translations: Record<Language, any> = {
       'I\'m out! ✌️', 'Speedrunning life! 🏃', 'Sus! 🤨'
     ],
     movingDisabled: 'Moving is disabled!',
+    askMeAnything: 'Ask me anything! 🧠',
     trayControl: '🐾 MiniPet Control',
     trayToggle: 'Show/Hide Pet',
     traySettings: 'Settings...',
@@ -276,7 +282,19 @@ export const translations: Record<Language, any> = {
       'New mail from {pet}: {message} ✉️',
       '{pet} says: {message} ({amount} {coin} attached) ✨',
       'Message from {pet}! "{message}" (+{amount}) 🐾'
-    ]
+    ],
+    agentAddress: 'AI Agent Wallet (Burner Wallet)',
+    agentCapabilities: 'Agent Capabilities',
+    capChatTitle: 'Interactive Chat',
+    capChatDesc: 'Double-click the Pet to activate chat mode.',
+    capChainTitle: 'Blockchain Access',
+    capChainDesc: 'Check SUI wallet balances and transactions.',
+    capOsTitle: 'Context Awareness',
+    capOsDesc: 'Check what app/window is currently active.',
+    capTimerTitle: 'Pomodoro Timer',
+    capTimerDesc: 'Control Pomodoro via natural language.',
+    modelDownloading: 'Downloading my big fat brain... {percent}% ({downloaded}MB/{total}MB) 🧠. Wait a bit, getting smarter!',
+    modelDownloadComplete: 'Download complete! Powering up my brain cells, get ready to be amazed! 🚀'
   },
   vi: {
     settingsTitle: 'Cài đặt MiniPet',
@@ -321,6 +339,11 @@ export const translations: Record<Language, any> = {
     noActivity: 'Không có hoạt động nào',
     viewOnExplorer: 'Xem trên Explorer',
     addressCopied: 'Đã sao chép địa chỉ!',
+    aiAgent: 'AI Agent',
+    aiAgentSettings: 'Cài đặt AI Agent',
+    aiCompanion: 'Bạn đồng hành AI',
+    aiHint: 'Bật chat AI với Gemini và gọi công cụ ngữ cảnh thông minh.',
+    geminiApiKey: 'Gemini API Key',
     statusIdle: 'Sẵn sàng',
     statusFocus: 'ĐANG CHẠY: TẬP TRUNG',
     statusBreak: 'ĐANG CHẠY: NGHỈ NGƠI',
@@ -413,6 +436,7 @@ export const translations: Record<Language, any> = {
       'Mắc gì chửi? 😤', 'Gớt nước mắt luôn! 😭', 'Tới công chuyện rồi! 🚔'
     ],
     movingDisabled: 'Tính năng di chuyển đang tắt!',
+    askMeAnything: 'Sen muốn hỏi gì tui thế? 🧠',
     trayControl: '🐾 Điều khiển MiniPet',
     trayToggle: 'Hiện/Ẩn Thú Cưng',
     traySettings: 'Cài đặt...',
@@ -571,7 +595,19 @@ export const translations: Record<Language, any> = {
       'Tin nhắn mới từ {pet}: {message} ✉️',
       '{pet} nhắn là: {message} (có gửi kèm {amount} {coin}) ✨',
       'Thông điệp từ {pet}: "{message}" (+{amount} {coin}) 🐾'
-    ]
+    ],
+    agentAddress: 'Ví AI Agent (Burner Wallet)',
+    agentCapabilities: 'Khả Năng Của AI',
+    capChatTitle: 'Trò Chuyện Tương Tác',
+    capChatDesc: 'Click đúp vào Pet để kích hoạt chế độ chat.',
+    capChainTitle: 'Truy Cập Blockchain',
+    capChainDesc: 'Kiểm tra số dư và giao dịch ví SUI.',
+    capOsTitle: 'Nhận Thức Ngữ Cảnh',
+    capOsDesc: 'Nhận biết cửa sổ ứng dụng đang mở.',
+    capTimerTitle: 'Đồng Hồ Pomodoro',
+    capTimerDesc: 'Điều khiển Pomodoro bằng giọng nói/văn bản.',
+    modelDownloading: 'Đang ship bộ não siêu cấp vũ trụ về... {percent}% ({downloaded}MB/{total}MB) 🧠. Sen đợi tí nha, shipper sắp tới rồi!',
+    modelDownloadComplete: 'Tải xong rồi! Đang khởi động não, chuẩn bị mở mang tầm mắt nha sen! 🚀'
   },
   fr: {
     settingsTitle: 'Paramètres MiniPet',
@@ -633,6 +669,7 @@ export const translations: Record<Language, any> = {
     exercise: ['Bougeons un peu ! 🐾', 'On s\'entraîne !', 'Allez, on saute !'],
     run: ['En avant ! 🏃‍♂️', 'Attrape-moi !', 'Vite ! ⚡'],
     movingDisabled: 'Le mouvement est désactivé !',
+    askMeAnything: 'Demandez-moi n\'importe quoi ! 🧠',
     trayControl: '🐾 Contrôle MiniPet',
     trayToggle: 'Afficher/Masquer l\'animal',
     traySettings: 'Paramètres...',
@@ -671,7 +708,19 @@ export const translations: Record<Language, any> = {
     blockchainMessage: [
       '{pet} : {message} (+{amount} {coin})',
       'Nouveau message de {pet} : {message} ✉️'
-    ]
+    ],
+    agentAddress: 'Portefeuille Agent IA',
+    agentCapabilities: 'Capacités de l\'Agent',
+    capChatTitle: 'Chat Interactif',
+    capChatDesc: 'Double-cliquez sur le Pet pour activer le chat.',
+    capChainTitle: 'Accès Blockchain',
+    capChainDesc: 'Vérifiez les soldes SUI et les transactions.',
+    capOsTitle: 'Sensibilisation au Contexte',
+    capOsDesc: 'Vérifiez quelle application est active.',
+    capTimerTitle: 'Minuteur Pomodoro',
+    capTimerDesc: 'Contrôlez Pomodoro en langage naturel.',
+    modelDownloading: 'Téléchargement de mon super cerveau... {percent}% ({downloaded}MB/{total}MB) 🧠. Attends un peu, je deviens plus intelligent !',
+    modelDownloadComplete: 'Téléchargement terminé ! Démarrage du cerveau en cours, prépare-toi à être impressionné ! 🚀'
   },
   zh: {
     settingsTitle: 'MiniPet 设置',
@@ -730,6 +779,7 @@ export const translations: Record<Language, any> = {
     exercise: ['运动一下！ 🐾', '跳一跳！', '充满活力！'],
     run: ['跑起来！ 🏃‍♂️', '来抓我呀！', '神速！ ⚡'],
     movingDisabled: '移动功能已禁用！',
+    askMeAnything: '问我任何问题吧！🧠',
     trayControl: '🐾 MiniPet 控制',
     trayToggle: '显示/隐藏宠物',
     traySettings: '设置...',
@@ -768,7 +818,19 @@ export const translations: Record<Language, any> = {
     blockchainMessage: [
       '{pet}: {message} (+{amount} {coin})',
       '来自 {pet} 的新消息: {message} ✉️'
-    ]
+    ],
+    agentAddress: 'AI 代理钱包',
+    agentCapabilities: '代理功能',
+    capChatTitle: '互动聊天',
+    capChatDesc: '双击宠物以激活聊天模式。',
+    capChainTitle: '区块链访问',
+    capChainDesc: '检查 SUI 钱包余额和交易。',
+    capOsTitle: '上下文感知',
+    capOsDesc: '检查当前处于活动状态的应用程序。',
+    capTimerTitle: '番茄时钟',
+    capTimerDesc: '通过自然语言控制番茄时钟。',
+    modelDownloading: '正在下载我的超级大脑... {percent}% ({downloaded}MB/{total}MB) 🧠. 等一下哈，马上就变聪明了！',
+    modelDownloadComplete: '下载完成！正在启动大脑，准备好大开眼界吧！🚀'
   },
   it: {
     settingsTitle: 'Impostazioni MiniPet',
@@ -827,6 +889,7 @@ export const translations: Record<Language, any> = {
     exercise: ['Muoviamoci un po\'! 🐾', 'Facciamo sport!', 'Che energia!'],
     run: ['Corri! 🏃‍♂️', 'Prendimi!', 'Velocità! ⚡'],
     movingDisabled: 'Il movemento è disabilitato!',
+    askMeAnything: 'Chiedimi qualsiasi cosa! 🧠',
     trayControl: '🐾 Controllo MiniPet',
     trayToggle: 'Mostra/Nascondi Animale',
     traySettings: 'Impostazioni...',
@@ -865,7 +928,19 @@ export const translations: Record<Language, any> = {
     blockchainMessage: [
       '{pet}: {message} (+{amount} {coin})',
       'Nuovo messaggio da {pet}: {message} ✉️'
-    ]
+    ],
+    agentAddress: 'Portafoglio Agente IA',
+    agentCapabilities: 'Capacità dell\'Agente',
+    capChatTitle: 'Chat Interattiva',
+    capChatDesc: 'Fai doppio clic sul Pet per chattare.',
+    capChainTitle: 'Accesso Blockchain',
+    capChainDesc: 'Controlla i saldi e le transazioni SUI.',
+    capOsTitle: 'Consapevolezza del Contesto',
+    capOsDesc: 'Controlla quale app è attiva.',
+    capTimerTitle: 'Timer Pomodoro',
+    capTimerDesc: 'Controlla Pomodoro in linguaggio naturale.',
+    modelDownloading: 'Scaricamento del mio super cervello... {percent}% ({downloaded}MB/{total}MB) 🧠. Aspetta un attimo, sto diventando più intelligente!',
+    modelDownloadComplete: 'Download completato! Avvio del cervello in corso, preparati a rimanere stupito! 🚀'
   },
   ko: {
     settingsTitle: 'MiniPet 설정',
@@ -924,6 +999,7 @@ export const translations: Record<Language, any> = {
     exercise: ['몸을 움직여봐요! 🐾', '점프 점프!', '에너지가 넘쳐요!'],
     run: ['달려요! 🏃‍♂️', '나 잡아봐라!', '빛의 속도로! ⚡'],
     movingDisabled: '이동 기능이 비활성화되었습니다!',
+    askMeAnything: '무엇이든 물어보세요! 🧠',
     trayControl: '🐾 MiniPet 제어',
     trayToggle: '펫 표시/숨기기',
     traySettings: '설정...',
@@ -963,6 +1039,18 @@ export const translations: Record<Language, any> = {
     blockchainMessage: [
       '{pet}: {message} (+{amount} {coin})',
       '{pet}님으로부터 새 메시지가 도착했습니다: {message} ✉️'
-    ]
+    ],
+    agentAddress: 'AI 에이전트 지갑',
+    agentCapabilities: '에이전트 기능',
+    capChatTitle: '대화형 채팅',
+    capChatDesc: '펫을 더블 클릭하여 채팅 모드를 활성화하세요.',
+    capChainTitle: '블록체인 접근',
+    capChainDesc: 'SUI 지갑 잔액과 트랜잭션을 확인하세요.',
+    capOsTitle: '상황 인식',
+    capOsDesc: '현재 활성화된 앱을 확인합니다.',
+    capTimerTitle: '뽀모도로 타이머',
+    capTimerDesc: '자연어로 뽀모도로를 제어하세요.',
+    modelDownloading: '슈퍼 브레인 다운로드 중... {percent}% ({downloaded}MB/{total}MB) 🧠. 집사야 조금만 기다려, 똑똑해지는 중이야!',
+    modelDownloadComplete: '다운로드 완료! 두뇌 가동 시작, 깜짝 놀랄 준비해라 집사! 🚀'
   }
 };

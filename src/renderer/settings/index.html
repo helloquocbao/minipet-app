@@ -29,6 +29,10 @@
           <span class="tab-icon">🔗</span>
           <span data-i18n="suiBlockchain">Blockchain</span>
         </button>
+        <button class="tab-btn" data-tab="ai">
+          <span class="tab-icon">🤖</span>
+          <span data-i18n="aiAgent">AI Agent</span>
+        </button>
       </nav>
 
       <div class="tab-content">
@@ -46,27 +50,6 @@
           <section class="section">
             <div class="section-header-row">
               <h2 data-i18n="choosePet">Choose Your Pet</h2>
-              <div class="gallery-actions">
-                <div class="import-dropdown">
-                  <button id="import-btn-main" class="import-btn" data-i18n="importPet">+ Import Pet</button>
-                  <div id="import-menu" class="import-menu">
-                    <button id="import-file-item" class="menu-item">
-                      <span class="menu-icon">📄</span>
-                      <div class="menu-text">
-                        <span class="menu-title">Import File</span>
-                        <span class="menu-desc">.zip, .json, .png, .webp</span>
-                      </div>
-                    </button>
-                    <button id="import-folder-item" class="menu-item">
-                      <span class="menu-icon">📁</span>
-                      <div class="menu-text">
-                        <span class="menu-title">Import Folder</span>
-                        <span class="menu-desc">Select a local directory</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
             <div id="pet-gallery" class="pet-gallery">
               <!-- Populated by JS -->
@@ -184,7 +167,7 @@
                   <h3 data-i18n="suiIntegration">SUI Integration</h3>
                   <p class="card-desc" data-i18n="suiHint">Connect your pet to the SUI blockchain to react to on-chain events.</p>
                 </div>
-                <label class="switch">
+                <label class="switch" style="display: none;">
                   <input type="checkbox" id="sui-enabled-toggle" />
                   <span class="slider round"></span>
                 </label>
@@ -233,6 +216,88 @@
               <h3 data-i18n="recentActivity">Recent Activity</h3>
               <div id="recent-activity-list" class="activity-list">
                 <div class="empty-state" data-i18n="noActivity">No recent activity detected</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Tab 4: AI Agent -->
+        <div id="tab-ai" class="tab-panel">
+          <section class="section">
+            <div class="section-header-row">
+              <h2 data-i18n="aiAgentSettings">AI Agent Settings</h2>
+              <div class="header-actions">
+                <div class="status-tag ai" id="ai-status">Inactive</div>
+              </div>
+            </div>
+            
+            <div class="blockchain-card">
+              <div class="card-header">
+                <div class="card-icon">🤖</div>
+                <div class="card-info">
+                  <h3 data-i18n="aiCompanion">AI Chat Companion</h3>
+                  <p class="card-desc" data-i18n="aiHint">Enable Gemini-powered AI chat and smart context tool-calling.</p>
+                </div>
+                <label class="switch" style="display: none;">
+                  <input type="checkbox" id="ai-enabled-toggle" />
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <div class="card-body">
+                <div class="setting-item-block">
+                  <label>Mô hình đang chạy (Local AI)</label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">🧠</span>
+                    <input type="text" class="text-input" value="qwen2.5:0.5b (Tauri Sidecar)" readonly style="color: #4ade80; border-color: #3f3f46;" />
+                  </div>
+                  <p class="setting-hint" style="margin-top: 8px;">Đang kết nối qua lõi C++ localhost:8080. Đảm bảo 100% Offline & Bảo mật tuyệt đối dữ liệu cá nhân.</p>
+                </div>
+
+                <div class="setting-item-block" style="margin-top: 16px;">
+                  <label data-i18n="agentAddress">AI Agent Wallet (Burner Wallet)</label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">👤</span>
+                    <input type="text" id="agent-address-input" class="text-input" readonly placeholder="Generating..." />
+                    <button id="copy-agent-address-btn" class="input-action-btn" title="Copy Address">📋</button>
+                  </div>
+                  <p class="setting-hint" style="margin-top: 8px; color: #4ade80;">Fund this wallet with SUI to allow your Pet to execute transactions for you.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- New Section: AI Agent Features -->
+            <div class="blockchain-sub-section" style="margin-top: 20px;">
+              <h3 style="font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, 0.85); margin-bottom: 10px;" data-i18n="agentCapabilities">Agent Capabilities</h3>
+              <div class="capabilities-grid">
+                <div class="capability-card">
+                  <div class="cap-icon">💬</div>
+                  <div class="cap-info">
+                    <strong data-i18n="capChatTitle">Interactive Chat</strong>
+                    <span data-i18n="capChatDesc">Double-click the Pet to activate chat mode.</span>
+                  </div>
+                </div>
+                <div class="capability-card">
+                  <div class="cap-icon">🔗</div>
+                  <div class="cap-info">
+                    <strong data-i18n="capChainTitle">Blockchain Access</strong>
+                    <span data-i18n="capChainDesc">Check SUI wallet balances and transactions.</span>
+                  </div>
+                </div>
+                <div class="capability-card">
+                  <div class="cap-icon">👁️</div>
+                  <div class="cap-info">
+                    <strong data-i18n="capOsTitle">Context Awareness</strong>
+                    <span data-i18n="capOsDesc">Check what app/window is currently active.</span>
+                  </div>
+                </div>
+                <div class="capability-card">
+                  <div class="cap-icon">⏱️</div>
+                  <div class="cap-info">
+                    <strong data-i18n="capTimerTitle">Pomodoro Timer</strong>
+                    <span data-i18n="capTimerDesc">Control Pomodoro via natural language.</span>
+                  </div>
+                </div>
               </div>
             </div>
           </section>

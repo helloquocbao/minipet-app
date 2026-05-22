@@ -22,8 +22,6 @@ export default defineConfig({
     },
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
-    // Prevent @tauri-apps/* from being externalized
-    commonjsOptions: { include: [] },
   },
   optimizeDeps: {
     include: [

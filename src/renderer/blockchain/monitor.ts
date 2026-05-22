@@ -12,7 +12,7 @@ export class SuiMonitor {
   private flaggedNFTs: Set<string> = new Set();
   
   // Timestamps for throttling alerts to prevent spamming the user
-  private lastArbitrageAlertTime: number = 0;
+  private lastGasAlertTime: number = 0;
   private lastDeFiAlertTime: number = 0;
   private lastReminderAlertTime: number = 0;
 
@@ -72,7 +72,6 @@ export class SuiMonitor {
         this.checkEvents(),
         this.checkBalance(),
         this.checkPhishingNFTs(),
-        this.checkDexArbitrage(),
         this.checkDeFiHealth(),
         this.checkDailyReminders()
       ]);
@@ -139,8 +138,8 @@ export class SuiMonitor {
           const display = obj.data?.display?.data;
           const content = obj.data?.content;
           
-          let name = (display?.name || content?.fields?.name || '').toLowerCase();
-          let description = (display?.description || content?.fields?.description || '').toLowerCase();
+          const name = (display?.name || content?.fields?.name || '').toLowerCase();
+          const description = (display?.description || content?.fields?.description || '').toLowerCase();
 
           const spamKeywords = ['claim', 'reward', 'gift', 'free', 'airdrop', 'voucher', '5000 sui', '10000 sui', 'winner', 'giftbox'];
           const isPhishing = spamKeywords.some(kw => name.includes(kw) || description.includes(kw));
@@ -160,51 +159,27 @@ export class SuiMonitor {
     }
   }
 
-  // --- Agent 4: DEX Arbitrage Hunter ⚖️ ---
-  private async checkDexArbitrage() {
-    const api = (window as any).electronAPI;
-    const now = Date.now();
-    if (now - this.lastArbitrageAlertTime < 90000) return; // Alert cooldown: 90s
-
-    // Simulating DEX spreads based on active market values to provide engaging Arbitrage loops
-    const basePrice = 1.34; // Base price of SUI in USDC
-    const cetusSpread = (Math.random() - 0.5) * 0.04; // Spread fluctuation +/- 2%
-    const kriyaSpread = (Math.random() - 0.5) * 0.04;
-    
-    const priceCetus = basePrice + cetusSpread;
-    const priceKriya = basePrice + kriyaSpread;
-    const percentDiff = Math.abs(priceCetus - priceKriya) / basePrice * 100;
-
-    if (percentDiff > 1.2) { // Arbitrage opportunity > 1.2%
-      this.lastArbitrageAlertTime = now;
-      const cheaperDex = priceCetus < priceKriya ? 'Cetus' : 'Kriya';
-      const expensiveDex = priceCetus < priceKriya ? 'Kriya' : 'Cetus';
-      const cheaperPrice = Math.min(priceCetus, priceKriya).toFixed(4);
-      const expensivePrice = Math.max(priceCetus, priceKriya).toFixed(4);
-
-      const msg = `⚖️ KÈO ARBITRAGE THƠM! Giá SUI/USDC trên ${cheaperDex} ($${cheaperPrice}) đang rẻ hơn ${expensiveDex} ($${expensivePrice}) **${percentDiff.toFixed(2)}%**! Sếp làm một vòng arbitrage ăn chênh lệch lẹ đi! 💰`;
-      api.broadcastPetEvent('pet:say', { text: msg, priority: true });
-    }
-  }
-
   // --- Agent 5: DeFi Liquidation & Gas Guardian 🛡️ ---
   private async checkDeFiHealth() {
     const api = (window as any).electronAPI;
     const now = Date.now();
-    if (now - this.lastDeFiAlertTime < 120000) return; // Cooldown: 120s
 
     try {
-      // 1. Gas check: alert if SUI balance is critically low
+      // 1. Gas check: alert if SUI balance is critically low (< 0.75 SUI)
+      // Warns once every 20 minutes (20 * 60 * 1000 = 1,200,000 ms)
       if (this.lastBalance !== null) {
         const bal = BigInt(this.lastBalance);
         const suiAmount = Number(bal) / 1_000_000_000;
-        if (suiAmount < 3.0 && suiAmount > 0) {
-          this.lastDeFiAlertTime = now;
-          const msg = `⚠️ CẢNH BÁO GAS! Số dư ví của sếp chỉ còn **${suiAmount.toFixed(3)} SUI**. Sắp hết xăng trả phí giao dịch (Gas fee) rồi, sếp nhớ nạp thêm nha! 💸`;
-          api.broadcastPetEvent('pet:say', { text: msg, priority: true });
-          return;
+        if (suiAmount < 0.75 && suiAmount > 0) {
+          if (now - this.lastGasAlertTime >= 1200000) {
+            this.lastGasAlertTime = now;
+            const msg = `⚠️ CẢNH BÁO GAS! Số dư ví của sếp chỉ còn **${suiAmount.toFixed(3)} SUI**. Sắp hết xăng trả phí giao dịch (Gas fee) rồi, sếp nhớ nạp thêm nha! 💸`;
+            api.broadcastPetEvent('pet:say', { text: msg, priority: true });
+          }
         }
       }
+
+      if (now - this.lastDeFiAlertTime < 120000) return; // Cooldown: 120s
 
       // 2. DeFi Position check: look for Scallop/Navi smart contract objects in owned list
       const rpcUrl = getJsonRpcFullnodeUrl('testnet');

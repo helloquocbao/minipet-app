@@ -63,9 +63,19 @@ pub fn run() {
             // Initialize pet manager and spawn windows
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let (default_x, default_y) = if let Ok(Some(monitor)) = handle.primary_monitor() {
+                    let size = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let screen_w = size.width as f64 / scale;
+                    let screen_h = size.height as f64 / scale;
+                    ((screen_w - 320.0) / 2.0, (screen_h - 320.0) / 2.0)
+                } else {
+                    (1400.0, 700.0)
+                };
+
                 let state: tauri::State<'_, AppState> = handle.state();
                 let mut mgr = state.pet_manager.lock().await;
-                if let Err(e) = mgr.init(&resource_dir).await {
+                if let Err(e) = mgr.init(&resource_dir, default_x, default_y).await {
                     eprintln!("[MiniPet] PetManager init failed: {}", e);
                     return;
                 }
@@ -155,6 +165,11 @@ pub fn run() {
             commands::resize_window_keep_bottom,
             commands::toggle_visibility,
             commands::exit_app,
+            commands::get_active_app,
+            commands::get_browser_tab,
+            commands::check_model_exists,
+            commands::download_model,
+            commands::start_ai_server,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

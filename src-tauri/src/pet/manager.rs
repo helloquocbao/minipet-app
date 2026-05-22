@@ -46,8 +46,16 @@ pub struct UserSettings {
     pub sui_address: String,
     #[serde(rename = "suiRpcUrl", default = "default_sui_rpc")]
     pub sui_rpc_url: String,
-    #[serde(rename = "suiEnabled", default)]
+    #[serde(rename = "suiEnabled", default = "default_true")]
     pub sui_enabled: bool,
+    #[serde(rename = "geminiApiKey", default)]
+    pub gemini_api_key: String,
+    #[serde(rename = "aiEnabled", default = "default_true")]
+    pub ai_enabled: bool,
+    #[serde(rename = "agentSecretKey", default)]
+    pub agent_secret_key: String,
+    #[serde(rename = "agentAddress", default)]
+    pub agent_address: String,
 }
 
 fn default_position() -> String {
@@ -82,7 +90,11 @@ impl Default for UserSettings {
             language: "en".to_string(),
             sui_address: "".to_string(),
             sui_rpc_url: "https://fullnode.mainnet.sui.io:443".to_string(),
-            sui_enabled: false,
+            sui_enabled: true,
+            gemini_api_key: "".to_string(),
+            ai_enabled: true,
+            agent_secret_key: "".to_string(),
+            agent_address: "".to_string(),
         }
     }
 }
@@ -110,6 +122,8 @@ pub struct PetManager {
     pub master_instance_id: Option<String>,
     pub is_dirty: bool,
     pub last_save_time: std::time::Instant,
+    pub default_x: f64,
+    pub default_y: f64,
 }
 
 impl PetManager {
@@ -123,10 +137,20 @@ impl PetManager {
             master_instance_id: None,
             is_dirty: false,
             last_save_time: std::time::Instant::now(),
+            default_x: DEFAULT_X,
+            default_y: DEFAULT_Y,
         }
     }
 
-    pub async fn init(&mut self, resource_dir: &PathBuf) -> Result<(), String> {
+    pub async fn init(
+        &mut self,
+        resource_dir: &PathBuf,
+        default_x: f64,
+        default_y: f64,
+    ) -> Result<(), String> {
+        self.default_x = default_x;
+        self.default_y = default_y;
+
         tokio::fs::create_dir_all(&self.pets_dir)
             .await
             .map_err(|e| e.to_string())?;
@@ -144,11 +168,13 @@ impl PetManager {
             inst.slug.starts_with("nft-") || installed_slugs.contains(&inst.slug)
         });
 
-        // Sanitize saved positions — reset if y >= 900 (likely off-screen on 1080p)
+        // Sanitize saved positions — reset if outside visible screen area
         for inst in &mut self.settings.active_pets {
-            if inst.x < 0.0 || inst.y < 0.0 || inst.y >= 900.0 {
-                inst.x = DEFAULT_X + rand::random::<f64>() * 200.0;
-                inst.y = DEFAULT_Y + rand::random::<f64>() * 100.0;
+            let max_x = 1600.0; // reasonable max for most screens
+            let max_y = 800.0;  // leave room for taskbar
+            if inst.x < 0.0 || inst.x > max_x || inst.y < 0.0 || inst.y > max_y {
+                inst.x = self.default_x + rand::random::<f64>() * 200.0;
+                inst.y = self.default_y + rand::random::<f64>() * 100.0;
             }
         }
 
@@ -162,8 +188,8 @@ impl PetManager {
             self.settings.active_pets.push(PetInstance {
                 id: Uuid::new_v4().to_string(),
                 slug: slug.clone(),
-                x: DEFAULT_X + rand::random::<f64>() * 200.0,
-                y: DEFAULT_Y + rand::random::<f64>() * 200.0,
+                x: self.default_x,
+                y: self.default_y,
                 scale: self.settings.scale,
             });
             self.settings.active_pet_slug = Some(slug);
@@ -318,8 +344,8 @@ impl PetManager {
         let instance = PetInstance {
             id: Uuid::new_v4().to_string(),
             slug: slug.to_string(),
-            x: DEFAULT_X + rand::random::<f64>() * 200.0,
-            y: DEFAULT_Y + rand::random::<f64>() * 200.0,
+            x: self.default_x + rand::random::<f64>() * 200.0,
+            y: self.default_y + rand::random::<f64>() * 200.0,
             scale: self.settings.scale,
         };
 
@@ -404,6 +430,26 @@ impl PetManager {
             if let Some(v) = obj.get("suiRpcUrl") {
                 if let Some(s) = v.as_str() {
                     self.settings.sui_rpc_url = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("geminiApiKey") {
+                if let Some(s) = v.as_str() {
+                    self.settings.gemini_api_key = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("aiEnabled") {
+                if let Some(b) = v.as_bool() {
+                    self.settings.ai_enabled = b;
+                }
+            }
+            if let Some(v) = obj.get("agentSecretKey") {
+                if let Some(s) = v.as_str() {
+                    self.settings.agent_secret_key = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("agentAddress") {
+                if let Some(s) = v.as_str() {
+                    self.settings.agent_address = s.to_string();
                 }
             }
         }
@@ -574,8 +620,8 @@ impl PetManager {
                 self.settings.active_pets.push(PetInstance {
                     id: Uuid::new_v4().to_string(),
                     slug: s.clone(),
-                    x: DEFAULT_X + rand::random::<f64>() * 200.0,
-                    y: DEFAULT_Y + rand::random::<f64>() * 200.0,
+                    x: self.default_x + rand::random::<f64>() * 200.0,
+                    y: self.default_y + rand::random::<f64>() * 200.0,
                     scale: self.settings.scale,
                 });
                 self.settings.active_pet_slug = Some(s);
@@ -635,8 +681,15 @@ impl PetManager {
     async fn load_settings(&mut self) {
         match tokio::fs::read_to_string(&self.settings_path).await {
             Ok(data) => {
-                if let Ok(parsed) = serde_json::from_str::<UserSettings>(&data) {
-                    self.settings = parsed;
+                if let Ok(mut parsed) = serde_json::from_str::<UserSettings>(&data) {
+                    if !parsed.sui_enabled || !parsed.ai_enabled {
+                        parsed.sui_enabled = true;
+                        parsed.ai_enabled = true;
+                        self.settings = parsed;
+                        self.save_settings().await;
+                    } else {
+                        self.settings = parsed;
+                    }
                     return;
                 }
             }

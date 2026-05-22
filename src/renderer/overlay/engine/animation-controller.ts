@@ -149,12 +149,31 @@ export class AnimationController {
           // Use logical position from shim or window
           const pos = (window.electronAPI as any).getLogicalPosition?.() || { x: window.screenX, y: window.screenY };
           const winX = pos.x;
+          const winY = pos.y;
 
           const winW = window.innerWidth;
-          const screenW = window.screen.availWidth;
+          const bounds = (window.electronAPI as any).getMonitorBounds?.() || { x: 0, width: window.screen.availWidth };
+          const minX = bounds.x;
+          const maxX = bounds.x + bounds.width;
 
           if (this.logicalX === null) this.logicalX = winX;
           const lx = this.logicalX as number;
+
+          // Safety Check: If pet is spawned completely out of bounds (X or Y), teleport it back
+          const outOfX = lx > maxX || lx + winW < minX;
+          const outOfY = winY < -100 || winY > window.screen.availHeight + 100;
+          
+          if (outOfX || outOfY) {
+            const newX = minX + (bounds.width - winW) / 2;
+            const newY = window.screen.availHeight / 2;
+            const deltaX = newX - lx;
+            const deltaY = newY - winY;
+            
+            window.electronAPI.moveWindow(deltaX, deltaY);
+            this.logicalX = newX;
+            this.accumulatedX = 0;
+            return; // Skip the rest of the movement frame
+          }
 
           // Multi-Pet: Handle chasing behavior
           if (this.targetX !== null) {
@@ -167,10 +186,10 @@ export class AnimationController {
               this.targetX = null;
             }
           } else {
-            if (this.direction === -1 && lx <= 0) {
+            if (this.direction === -1 && lx <= minX) {
               this.direction = 1;
               this.accumulatedX = 0;
-            } else if (this.direction === 1 && lx + winW >= screenW) {
+            } else if (this.direction === 1 && lx + winW >= maxX) {
               this.direction = -1;
               this.accumulatedX = 0;
             }

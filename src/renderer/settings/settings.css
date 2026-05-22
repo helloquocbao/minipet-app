@@ -1141,3 +1141,57 @@ input:checked+.slider:before {
 .link-icon {
     font-size: 14px;
 }
+
+/* Agent Capabilities Grid */
+.capabilities-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.capability-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.3s ease;
+}
+
+.capability-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(124, 58, 237, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(124, 58, 237, 0.15);
+}
+
+.cap-icon {
+  font-size: 20px;
+  width: 36px;
+  height: 36px;
+  background: rgba(124, 58, 237, 0.15);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cap-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cap-info strong {
+  font-size: 13px;
+  color: #fff;
+}
+
+.cap-info span {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.3;
+}

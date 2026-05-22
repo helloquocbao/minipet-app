@@ -11,7 +11,7 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' https://*.sui.io https://*.mystenlabs.com https://*.walrus.space; img-src 'self' asset: https://asset.localhost blob: data: https://*.walrus.space; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'",
+      "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' http://127.0.0.1:8080 http://localhost:8080 https://*.sui.io https://*.mystenlabs.com https://*.walrus.space; img-src 'self' asset: https://asset.localhost blob: data: https://*.walrus.space; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'",
       "assetProtocol": {
         "enable": true,
         "scope": ["**"]
@@ -22,6 +22,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "bin/llama-server"
+    ],
     "icon": [
       "icons/icon.icns",
       "icons/icon.ico",

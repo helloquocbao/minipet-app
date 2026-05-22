@@ -22,7 +22,7 @@ export const updateSettings = (settings: Record<string, unknown>) =>
   invoke('update_settings', { settings });
 
 // --- Window ---
-export const setIgnoreMouseEvents = async (ignore: boolean, options?: { forward: boolean }) => {
+export const setIgnoreMouseEvents = async (ignore: boolean, _options?: { forward: boolean }) => {
   const win = getCurrentWebviewWindow();
   await win.setIgnoreCursorEvents(ignore);
 };
