@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::loader::{self, LoadedPet};
 
-const MAX_ACTIVE_PETS: usize = 5;
+const MAX_ACTIVE_PETS: usize = 1;
 // Safe spawn position — center-ish of a typical 1920x1080 screen
 const DEFAULT_X: f64 = 1400.0;
 const DEFAULT_Y: f64 = 700.0;
@@ -56,6 +56,14 @@ pub struct UserSettings {
     pub agent_secret_key: String,
     #[serde(rename = "agentAddress", default)]
     pub agent_address: String,
+    #[serde(rename = "fastTransferWallets", default)]
+    pub fast_transfer_wallets: Vec<String>,
+    #[serde(default = "default_happiness")]
+    pub happiness: u64,
+}
+
+fn default_happiness() -> u64 {
+    100
 }
 
 fn default_position() -> String {
@@ -95,6 +103,8 @@ impl Default for UserSettings {
             ai_enabled: true,
             agent_secret_key: "".to_string(),
             agent_address: "".to_string(),
+            fast_transfer_wallets: vec![],
+            happiness: 100,
         }
     }
 }
@@ -144,7 +154,7 @@ impl PetManager {
 
     pub async fn init(
         &mut self,
-        resource_dir: &PathBuf,
+        resource_dir: &std::path::Path,
         default_x: f64,
         default_y: f64,
     ) -> Result<(), String> {
@@ -285,6 +295,14 @@ impl PetManager {
                     _ => "1".to_string(),
                 })
                 .unwrap_or_else(|| "1".to_string());
+            let experience = fields
+                .get("experience")
+                .map(|v| match v {
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => "0".to_string(),
+                })
+                .unwrap_or_else(|| "0".to_string());
             let perfection = fields
                 .get("perfection_score")
                 .map(|v| match v {
@@ -294,10 +312,12 @@ impl PetManager {
                 })
                 .unwrap_or_else(|| "0".to_string());
             let perfection_val = perfection.parse::<f64>().unwrap_or(0.0) / 100.0;
+            let level_num = level.parse::<i32>().unwrap_or(1);
+            let next_level_exp = level_num * 100;
 
             let manifest = serde_json::json!({
                 "displayName": name,
-                "description": format!("Level: {} | Perfection: {:.2}%", level, perfection_val),
+                "description": format!("Level: {} (Exp: {}/{}) | Perfection: {:.2}%", level, experience, next_level_exp, perfection_val),
                 "slug": instance.slug,
                 "spritesheetPath": sprite_url,
                 "frameSize": {
@@ -330,9 +350,9 @@ impl PetManager {
     }
 
     pub async fn spawn_pet(&mut self, slug: &str) -> Result<PetInstance, String> {
-        if self.settings.active_pets.len() >= MAX_ACTIVE_PETS {
-            return Err(format!("Maximum {} pets allowed", MAX_ACTIVE_PETS));
-        }
+        // Clear existing pets since we only allow 1 active pet now
+        self.settings.active_pets.clear();
+
         if !slug.starts_with("nft-") && !self
             .pets
             .iter()
@@ -640,7 +660,7 @@ impl PetManager {
         Ok(())
     }
 
-    async fn copy_default_pets(&mut self, resource_dir: &PathBuf) {
+    async fn copy_default_pets(&mut self, resource_dir: &std::path::Path) {
         // In dev mode, resource_dir points to target/debug/ which has no default-pets.
         // Try resource_dir first, then fall back to the source assets path.
         let source = {
@@ -649,7 +669,7 @@ impl PetManager {
                 r
             } else {
                 // Walk up from resource_dir to find the workspace root
-                let mut dir = resource_dir.clone();
+                let mut dir = resource_dir.to_path_buf();
                 loop {
                     let candidate = dir.join("src").join("assets").join("default-pets");
                     if candidate.exists() {
@@ -678,22 +698,19 @@ impl PetManager {
         }
     }
 
-    async fn load_settings(&mut self) {
-        match tokio::fs::read_to_string(&self.settings_path).await {
-            Ok(data) => {
-                if let Ok(mut parsed) = serde_json::from_str::<UserSettings>(&data) {
-                    if !parsed.sui_enabled || !parsed.ai_enabled {
-                        parsed.sui_enabled = true;
-                        parsed.ai_enabled = true;
-                        self.settings = parsed;
-                        self.save_settings().await;
-                    } else {
-                        self.settings = parsed;
-                    }
-                    return;
+    pub async fn load_settings(&mut self) {
+        if let Ok(data) = tokio::fs::read_to_string(&self.settings_path).await {
+            if let Ok(mut parsed) = serde_json::from_str::<UserSettings>(&data) {
+                if !parsed.sui_enabled || !parsed.ai_enabled {
+                    parsed.sui_enabled = true;
+                    parsed.ai_enabled = true;
+                    self.settings = parsed;
+                    self.save_settings().await;
+                } else {
+                    self.settings = parsed;
                 }
+                return;
             }
-            Err(_) => {}
         }
         self.settings = UserSettings::default();
         self.save_settings().await;
@@ -701,7 +718,7 @@ impl PetManager {
 
     pub async fn save_settings(&mut self) {
         if let Ok(json) = serde_json::to_string_pretty(&self.settings) {
-            if let Ok(_) = tokio::fs::write(&self.settings_path, json).await {
+            if tokio::fs::write(&self.settings_path, json).await.is_ok() {
                 self.is_dirty = false;
                 self.last_save_time = std::time::Instant::now();
             }

@@ -204,6 +204,7 @@ export function setupElectronShim() {
     // --- Intelligence ---
     getActiveApp: () => invoke('get_active_app'),
     getBrowserTab: (browser: string) => invoke('get_browser_tab', { browser }),
+    getBrowserUrl: (browser: string) => invoke('get_browser_url', { browser }),
 
     onDragDrop: (cb: (type: string, paths: string[]) => void) => {
       win.onDragDropEvent((event) => {

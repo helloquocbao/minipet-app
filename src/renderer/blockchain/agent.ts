@@ -71,16 +71,39 @@ export class SecurityAgent {
     const api = this.getApi();
     if (!api) return;
 
+    let userAddress = '';
+    try {
+      const settings = await api.getSettings();
+      userAddress = settings?.suiAddress || '';
+      if (userAddress && text.trim().toLowerCase() === userAddress.trim().toLowerCase()) {
+        api.broadcastPetEvent('pet:say', { text: "👤 Đây là địa chỉ ví của sếp nè! 🏠", priority: true });
+        return;
+      }
+    } catch (err) {
+      console.error('[SecurityAgent] Failed to check user settings:', err);
+    }
+
+    const trimmed = text.trim();
+    // Phát hiện và đề xuất liên kết ví mới từ clipboard nếu ví hiện tại chưa được liên kết
+    if (!userAddress && trimmed.startsWith('0x') && trimmed.length === 66 && !trimmed.includes('::')) {
+      api.broadcastPetEvent('pet:say', {
+        text: `🔑 Sen ơi, tui thấy sen vừa copy địa chỉ ví Sui này!\n${trimmed.slice(0, 8)}...${trimmed.slice(-6)}\nNếu đây là ví của sen, nhấp vào tui để đồng bộ ngay nhé! 🐾`,
+        priority: true
+      });
+      api.broadcastPetEvent('wallet:suggest-sync', { address: trimmed });
+      return;
+    }
+
     // Pet nói: "Để tui giúp bạn..."
     api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.thinking), priority: true });
 
     // Thêm delay giả lập chút xíu để tạo cảm giác "đang check"
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    if (text.includes('::')) {
-      await this.analyzeCoinType(text);
+    if (trimmed.includes('::')) {
+      await this.analyzeCoinType(trimmed);
     } else {
-      await this.analyzeObject(text);
+      await this.analyzeObject(trimmed);
     }
   }
 
@@ -155,7 +178,7 @@ export class SecurityAgent {
 
         if (isWallet) {
           const shortAddr = `${objectId.slice(0, 8)}...${objectId.slice(-6)}`;
-          const msg = `👤 Ví SUI cá nhân\n🔗 ID: ${shortAddr}\n💰 Số dư: ${balanceStr} SUI\n📦 Tài sản: ${assetsCount} NFTs/Objects`;
+          const msg = `⚠️ Cảnh báo! Boss vừa copy địa chỉ ví lạ:\n🔗 ID: ${shortAddr}\n💰 Số dư: ${balanceStr} SUI\n📦 Tài sản: ${assetsCount} NFTs/Objects\nBoss hãy check kỹ trước khi gửi tài sản nha! 🛡️`;
           api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         } else {
           api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.fake), priority: true });

@@ -15,6 +15,7 @@ win.setIgnoreCursorEvents(true);
 const label = win.label;
 const instanceId = label.replace('speech-', '');
 
+const closeBtn = document.getElementById('close-btn')!;
 let isChatActive = false;
 
 // Listen for speech updates
@@ -22,11 +23,18 @@ listen(`update-speech-${instanceId}`, (event: any) => {
   const { text, visible } = event.payload;
   
   if (visible) {
+    // Don't overwrite chat content with regular speech
+    if (isChatActive) return;
     speechText.textContent = text;
     bubble.classList.add('visible');
   } else if (!isChatActive) {
     bubble.classList.remove('visible');
   }
+});
+
+// Close button click toggles chat mode off
+closeBtn.addEventListener('click', () => {
+  emit(`chat-mode-toggle-${instanceId}`, { active: false });
 });
 
 // Listen for chat mode activation/deactivation
@@ -38,6 +46,7 @@ listen(`chat-mode-${instanceId}`, (event: any) => {
     bubble.classList.add('visible');
     bubble.classList.add('chat-active');
     chatContainer.style.display = 'block';
+    closeBtn.style.display = 'block';
     speechText.textContent = welcomeText || 'Ask me anything! 🧠';
     
     // Enable interaction
@@ -46,6 +55,7 @@ listen(`chat-mode-${instanceId}`, (event: any) => {
   } else {
     bubble.classList.remove('chat-active');
     chatContainer.style.display = 'none';
+    closeBtn.style.display = 'none';
     win.setIgnoreCursorEvents(true);
     bubble.classList.remove('visible');
     chatInput.readOnly = false;
@@ -78,8 +88,25 @@ listen(`chat-reply-${instanceId}`, (event: any) => {
 });
 
 // Close chat mode when the speech window loses focus (user clicks outside)
-window.addEventListener('blur', () => {
+window.addEventListener('blur', async () => {
   if (isChatActive) {
+    // Wait a brief moment to let the OS register the active application change
+    await new Promise(resolve => setTimeout(resolve, 80));
+    
+    try {
+      const activeApp = await (window as any).electronAPI.getActiveApp();
+      console.log("[Speech] Window blurred. Active app in OS:", activeApp);
+      const nameLower = (activeApp || '').toLowerCase();
+      
+      // If the active app is still MiniPet, it means they just hovered out (or clicked on the pet overlay),
+      // so we do not close the chat bubble!
+      if (nameLower === 'minipet') {
+        return;
+      }
+    } catch (err) {
+      console.error("[Speech] Failed to check active app on blur:", err);
+    }
+    
     emit(`chat-mode-toggle-${instanceId}`, { active: false });
   }
 });

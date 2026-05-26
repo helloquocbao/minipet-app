@@ -28,6 +28,10 @@ pub async fn spawn_pet(
     slug: String,
 ) -> Result<PetInstance, String> {
     let mut mgr = state.pet_manager.lock().await;
+    
+    // Destroy existing pet windows since we only allow 1 pet
+    crate::window::overlay::destroy_all(&app);
+    
     let instance = mgr.spawn_pet(&slug).await?;
     crate::window::overlay::create(&app, &instance.id, instance.x, instance.y)?;
     // Notify settings window
@@ -79,7 +83,7 @@ pub async fn get_spritesheet_data(
 
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as usize;
         let b1 = if chunk.len() > 1 {
@@ -112,7 +116,8 @@ fn base64_encode(data: &[u8]) -> String {
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<UserSettings, String> {
-    let mgr = state.pet_manager.lock().await;
+    let mut mgr = state.pet_manager.lock().await;
+    mgr.load_settings().await;
     Ok(mgr.get_settings())
 }
 
@@ -123,7 +128,16 @@ pub async fn update_settings(
     settings: serde_json::Value,
 ) -> Result<(), String> {
     let mut mgr = state.pet_manager.lock().await;
-    mgr.update_settings(settings).await;
+    mgr.update_settings(settings.clone()).await;
+
+    // Reset last_clipboard if settings contains empty SUI address (disconnect)
+    if let Some(sui_addr) = settings.get("suiAddress") {
+        if sui_addr.as_str().map(|s| s.is_empty()).unwrap_or(false) {
+            let mut last_cb = state.last_clipboard.lock().await;
+            *last_cb = String::new();
+        }
+    }
+
     let _ = app.emit("settings:update", mgr.get_settings());
     Ok(())
 }
@@ -357,25 +371,30 @@ pub fn get_browser_tab(browser: String) -> Option<String> {
     crate::intelligence::get_browser_tab(&browser)
 }
 
+#[tauri::command]
+pub fn get_browser_url(browser: String) -> Option<String> {
+    crate::intelligence::get_browser_url(&browser)
+}
+
 // --- Local AI Commands ---
 
 #[tauri::command]
 pub fn check_model_exists(app: AppHandle) -> bool {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
     model_path.exists()
 }
 
 #[tauri::command]
 pub async fn download_model(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
     
     if model_path.exists() {
         return Ok(());
     }
     
-    let url = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+    let url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
     
     let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
     let total_size = response.content_length().unwrap_or(0);
@@ -411,20 +430,50 @@ pub async fn download_model(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn start_ai_server(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-0.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
     
-    let bin_path = "/Users/sdj/VICENT-Project/minipet/minipet-tauri/src-tauri/bin/llama-server-aarch64-apple-darwin";
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let mut bin_path = resource_dir.join("bin/llama-server-aarch64-apple-darwin");
     
-    std::process::Command::new(bin_path)
+    if !bin_path.exists() {
+        let candidates = vec![
+            resource_dir.join("../../bin/llama-server-aarch64-apple-darwin"),
+            resource_dir.join("../../../bin/llama-server-aarch64-apple-darwin"),
+            std::env::current_dir().unwrap_or_default().join("bin/llama-server-aarch64-apple-darwin"),
+            std::env::current_dir().unwrap_or_default().join("src-tauri/bin/llama-server-aarch64-apple-darwin"),
+        ];
+        for candidate in candidates {
+            if candidate.exists() {
+                bin_path = candidate;
+                break;
+            }
+        }
+    }
+    
+    eprintln!("[Rust Local AI] Starting AI server...");
+    eprintln!("[Rust Local AI] Binary path: {:?}", bin_path);
+    eprintln!("[Rust Local AI] Model path: {:?}", model_path);
+    eprintln!("[Rust Local AI] Binary exists: {}", bin_path.exists());
+    eprintln!("[Rust Local AI] Model exists: {}", model_path.exists());
+    
+    let child = std::process::Command::new(&bin_path)
         .arg("-m")
-        .arg(model_path)
+        .arg(&model_path)
         .arg("--port")
         .arg("8080")
         .arg("-c")
         .arg("2048")
-        .spawn()
-        .map_err(|e| e.to_string())?;
+        .spawn();
         
-    Ok(())
+    match child {
+        Ok(c) => {
+            eprintln!("[Rust Local AI] Server successfully spawned with PID: {}", c.id());
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("[Rust Local AI] Failed to spawn server: {:?}", e);
+            Err(e.to_string())
+        }
+    }
 }
 

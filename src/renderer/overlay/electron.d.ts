@@ -53,6 +53,7 @@ export interface ElectronAPI {
   // --- Intelligence ---
   getActiveApp: () => Promise<string | null>;
   getBrowserTab: (browser: string) => Promise<string | null>;
+  getBrowserUrl: (browser: string) => Promise<string | null>;
 
   // --- Speech synchronization ---
   notifySpeaking: () => void;

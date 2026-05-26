@@ -1159,7 +1159,7 @@ const LANG_NAME_MAP: Record<string, string> = {
 
 function buildSystemPrompt(langCode: string, timeStr?: string, dateStr?: string): string {
   const langName = LANG_NAME_MAP[langCode] || 'English';
-  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet, or send a gift. NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. Answer in ${langName}.`;
+  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet, or send a gift. You can also use 'add_fast_transfer_wallet' or 'remove_fast_transfer_wallet' to manage the user's fast transfer whitelist if they explicitly ask to add or remove an address starting with 0x. NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. Answer in ${langName}.`;
   if (timeStr && dateStr) {
     prompt += ` Current time: ${timeStr}, Date: ${dateStr}.`;
   }
@@ -1173,7 +1173,7 @@ const localChatHistory: any[] = [
 async function handleLocalChat(userText: string) {
   const savedSettings: any = await window.electronAPI.getSettings();
 
-  const FAST_TRANSFER_WALLETS: string[] = [];
+  const FAST_TRANSFER_WALLETS: string[] = savedSettings?.fastTransferWallets || [];
   
   try {
     // Dynamic system prompt update with language from settings + current local time
@@ -1222,6 +1222,8 @@ async function handleLocalChat(userText: string) {
         'set_pomodoro_timer': '⏱️ Đang bật timer...',
         'bonk_pet': '🥊 Đang gõ đầu pet...',
         'send_pet_gift': '🎁 Đang gửi quà tặng...',
+        'add_fast_transfer_wallet': '📝 Đang thêm ví vào danh sách whitelist...',
+        'remove_fast_transfer_wallet': '🗑️ Đang xoá ví khỏi danh sách whitelist...',
       };
       return msgs[fnName] || '⏳ Đang xử lý...';
     }
@@ -1403,6 +1405,34 @@ async function handleLocalChat(userText: string) {
             }
           } catch(e: any) {
             toolResult = friendlyError(e.message || e.toString(), 'Chuyển tiền');
+          }
+        }
+      } else if (fnName === "add_fast_transfer_wallet") {
+        const address = args.address;
+        if (!address || !address.startsWith('0x')) {
+          toolResult = "❌ Địa chỉ ví không hợp lệ!";
+        } else {
+          let currentList = [...FAST_TRANSFER_WALLETS];
+          if (!currentList.includes(address)) {
+            currentList.push(address);
+            await window.electronAPI.updateSettings({ fastTransferWallets: currentList });
+            toolResult = `✅ Đã thêm ${address} vào danh sách chuyển nhanh! Bạn có thể xem trong Settings.`;
+          } else {
+            toolResult = `ℹ️ Địa chỉ ${address} đã có sẵn trong danh sách!`;
+          }
+        }
+      } else if (fnName === "remove_fast_transfer_wallet") {
+        const address = args.address;
+        if (!address) {
+          toolResult = "❌ Thiếu địa chỉ ví cần xoá!";
+        } else {
+          let currentList = [...FAST_TRANSFER_WALLETS];
+          if (currentList.includes(address)) {
+            currentList = currentList.filter(a => a !== address);
+            await window.electronAPI.updateSettings({ fastTransferWallets: currentList });
+            toolResult = `✅ Đã xoá ${address} khỏi danh sách chuyển nhanh!`;
+          } else {
+            toolResult = `ℹ️ Địa chỉ ${address} không có trong danh sách!`;
           }
         }
       } else if (fnName === "bonk_pet") {

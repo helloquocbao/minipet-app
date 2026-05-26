@@ -75,6 +75,38 @@ pub fn get_browser_tab(browser: &str) -> Option<String> {
     }
 }
 
+#[allow(dead_code)]
+pub fn get_browser_url(browser: &str) -> Option<String> {
+    if cfg!(target_os = "macos") {
+        let script = match browser {
+            b if b.contains("Chrome") => {
+                "tell application \"Google Chrome\" to get URL of active tab of front window"
+            }
+            b if b.contains("Safari") => {
+                "tell application \"Safari\" to get URL of front document"
+            }
+            b if b.contains("Arc") => {
+                "tell application \"Arc\" to get URL of active tab of front window"
+            }
+            _ => return None,
+        };
+
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .ok()?;
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if url.is_empty() {
+            None
+        } else {
+            Some(url)
+        }
+    } else {
+        None
+    }
+}
+
 /// Emits a "pet:say" event to all overlay windows with a context-aware comment
 #[allow(dead_code)]
 pub fn emit_context_comment(app: &AppHandle, text: &str) {

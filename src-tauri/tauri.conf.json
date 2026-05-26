@@ -34,5 +34,12 @@
       "../src/assets/default-pets": "default-pets",
       "../src/assets/icons": "icons"
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["minipet"]
+      }
+    }
   }
 }

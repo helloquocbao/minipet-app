@@ -15,6 +15,7 @@ pub struct AppState {
     pub pet_manager: Mutex<PetManager>,
     pub pomodoro: Mutex<PomodoroManager>,
     pub pomo_state: Arc<Mutex<PomodoroState>>,
+    pub last_clipboard: Mutex<String>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,7 +28,15 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            for arg in args {
+                if arg.starts_with("minipet://") {
+                    let _ = app.emit("single-instance://deep-link", arg);
+                    break;
+                }
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -56,6 +65,7 @@ pub fn run() {
                 pet_manager: Mutex::new(pet_manager),
                 pomodoro: Mutex::new(pomodoro),
                 pomo_state,
+                last_clipboard: Mutex::new(String::new()),
             };
 
             app.manage(state);
@@ -108,7 +118,6 @@ pub fn run() {
             // Start Lightweight Clipboard Monitor for Security Agent
             let cb_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let mut last_clipboard = String::new();
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     if let Ok(text) = cb_handle.clipboard().read_text() {
@@ -117,8 +126,11 @@ pub fn run() {
                             continue;
                         }
 
-                        if text != last_clipboard {
-                            last_clipboard = text.clone();
+                        let state: tauri::State<'_, AppState> = cb_handle.state();
+                        let mut last_cb = state.last_clipboard.lock().await;
+
+                        if text != *last_cb {
+                            *last_cb = text.clone();
                             let trimmed = text.trim();
                             // Check for Object ID (0x + 64 hex) or Coin Type (0x...::...::...)
                             if (trimmed.starts_with("0x") && trimmed.len() == 66) || 
@@ -130,9 +142,8 @@ pub fn run() {
                 }
             });
 
-            // Create system tray
             tray::create(app.handle()).map_err(|e| {
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                Box::new(std::io::Error::other(e))
                     as Box<dyn std::error::Error>
             })?;
 
@@ -167,6 +178,7 @@ pub fn run() {
             commands::exit_app,
             commands::get_active_app,
             commands::get_browser_tab,
+            commands::get_browser_url,
             commands::check_model_exists,
             commands::download_model,
             commands::start_ai_server,

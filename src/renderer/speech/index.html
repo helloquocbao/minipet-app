@@ -42,6 +42,23 @@
       width: 240px;
       text-align: left;
     }
+    #close-btn {
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      background: transparent;
+      border: none;
+      color: rgba(26, 27, 46, 0.4);
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: bold;
+      line-height: 1;
+      padding: 2px;
+      z-index: 10;
+    }
+    #close-btn:hover {
+      color: rgba(26, 27, 46, 0.8);
+    }
     #chat-input {
       width: 100%;
       border: none;
@@ -72,6 +89,7 @@
 </head>
 <body>
   <div id="bubble">
+    <button id="close-btn" style="display: none;">&times;</button>
     <div id="speech-text">...</div>
     <div id="chat-container" style="display: none;">
       <input type="text" id="chat-input" placeholder="Chat with pet..." />

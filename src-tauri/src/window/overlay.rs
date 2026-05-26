@@ -14,7 +14,7 @@ pub fn create(app: &AppHandle, instance_id: &str, x: f64, y: f64) -> Result<(), 
     // 1. Create Unified Pet & Speech Window
     let url = WebviewUrl::App(format!("renderer/overlay/index.html?id={}", instance_id).into());
     let win = WebviewWindowBuilder::new(app, &label, url)
-        .title(&format!("MiniPet-{}", instance_id))
+        .title(format!("MiniPet-{}", instance_id))
         .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
         .position(x, y)
         .transparent(true)
@@ -34,7 +34,7 @@ pub fn create(app: &AppHandle, instance_id: &str, x: f64, y: f64) -> Result<(), 
     if app.get_webview_window(&speech_label).is_none() {
         let speech_url = WebviewUrl::App(format!("renderer/speech/index.html?id={}", instance_id).into());
         let speech_win = WebviewWindowBuilder::new(app, &speech_label, speech_url)
-            .title(&format!("Speech-{}", instance_id))
+            .title(format!("Speech-{}", instance_id))
             .inner_size(260.0, 160.0)
             .position(x, y - 160.0)
             .transparent(true)

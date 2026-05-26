@@ -29,6 +29,7 @@
     "fs:allow-remove",
     "fs:allow-copy-file",
     "fs:allow-rename",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "deep-link:default"
   ]
 }

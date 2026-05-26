@@ -1,5 +1,11 @@
 /* Design: Dark theme, modern, premium feel */
 
+:root {
+  --primary: #7c3aed;
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --sui-color: #6badde;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -906,6 +912,17 @@ input:checked+.slider:before {
   position: relative;
   display: flex;
   align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 2px 0;
+}
+
+.input-with-icon:focus-within {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .input-icon {
@@ -917,8 +934,15 @@ input:checked+.slider:before {
 }
 
 .input-with-icon .text-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  height: 38px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
   padding-left: 40px;
-  width: 100%;
 }
 
 .blockchain-stats {
@@ -1194,4 +1218,265 @@ input:checked+.slider:before {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.3;
+}
+
+/* --- AI & Web3 Combined Grid & Premium Wallet Styles --- */
+.settings-grid-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.settings-grid-layout .grid-column {
+  display: flex;
+  flex-direction: column;
+}
+
+
+
+/* AI Agent address input padding (fits 1 action button) */
+
+
+/* Premium action buttons inside inputs */
+.input-action-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e0e0e8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.input-action-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(124, 58, 237, 0.4);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.input-action-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+/* Button placement: SUI wallet has 2 buttons (Check & Copy) */
+#copy-address-btn {
+  right: 8px;
+}
+
+#check-wallet-btn {
+  right: 38px;
+}
+
+/* AI Agent wallet has 1 button (Copy) */
+#copy-agent-address-btn {
+  right: 8px;
+}
+
+/* Select wrapper styling */
+.select-wrapper {
+  cursor: pointer;
+}
+
+.select-wrapper select.select-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* Compact lists to prevent overflow */
+.compact-list {
+  max-height: 110px;
+  overflow-y: auto;
+}
+
+/* Webkit Scrollbars for lists */
+.compact-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.compact-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+.compact-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.compact-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.3);
+}
+
+/* --- AI & Web3 Stacked Layout --- */
+.settings-stacked-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.blockchain-card.compact-card {
+  margin-top: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card-header-horizontal {
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title-row .card-icon {
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #7c3aed 0%, #3e92cc 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.2);
+}
+
+.card-title-row h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.blockchain-stats-horizontal {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+}
+
+.blockchain-stats-horizontal .stat-label {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.blockchain-stats-horizontal .stat-value {
+  color: #4ade80;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.card-body-horizontal {
+  padding: 10px 16px;
+}
+
+.setting-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.address-actions-horizontal {
+  display: flex;
+  gap: 8px;
+}
+
+.explorer-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+  height: 38px;
+  transition: all 0.2s ease;
+}
+
+.explorer-link-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(124, 58, 237, 0.4);
+  color: #fff;
+}
+
+.sync-btn-gradient {
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  border: none;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 38px;
+  transition: all 0.2s ease;
+}
+
+.sync-btn-gradient:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+}
+
+.disconnect-btn-red {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 38px;
+  transition: all 0.2s ease;
+}
+
+.disconnect-btn-red:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fff;
+}
+
+.input-group-horizontal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-group-horizontal label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.5px;
+}
+
+.hint-row {
+  margin-top: 6px;
+}
+
+.hint-row .setting-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
 }

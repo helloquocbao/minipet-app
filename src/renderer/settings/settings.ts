@@ -162,11 +162,31 @@ export async function initSettings(): Promise<void> {
 
       if (langChanged || petsChanged || suiStateChanged) {
         if (suiStateChanged) {
-          await updateCachedPetList();
+          updateCachedPetList().then(() => {
+            requestAnimationFrame(() => refreshUI());
+          });
         }
         requestAnimationFrame(() => refreshUI());
       } else {
         populateForm(updated);
+      }
+    });
+
+    // Reload settings when window gets focus (handles updates from external processes like release sync)
+    window.addEventListener('focus', async () => {
+      try {
+        const latest = await api.getSettings();
+        const latestJson = JSON.stringify(latest);
+        if (latestJson !== lastSettingsJson) {
+          currentSettings = latest;
+          lastSettingsJson = latestJson;
+          updateCachedPetList().then(() => {
+            requestAnimationFrame(() => refreshUI());
+          });
+          requestAnimationFrame(() => refreshUI());
+        }
+      } catch (err) {
+        console.error('Failed to reload settings on focus:', err);
       }
     });
 
@@ -321,11 +341,7 @@ function setupGlobalEventListeners() {
         const instance = currentSettings.activePets.find(ap => ap.slug === slug);
         if (instance) await api.removePet(instance.id);
       } else {
-        const max = (INTERACTION as any).MAX_ACTIVE_PETS || 5;
-        if (currentSettings.activePets.length >= max) {
-          showToast(translations[currentSettings.language as Language || 'en'].maxPetsReached, 'error');
-          return;
-        }
+        // Automatically spawn the pet. The backend will handle clearing the old pet.
         card.classList.add('active');
         await api.spawnPet(slug);
       }
@@ -407,14 +423,34 @@ function setupGlobalEventListeners() {
 
   const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
   let suiAddrDebounce: any = null;
+
+  const saveSuiAddress = async () => {
+    if (suiAddrDebounce) clearTimeout(suiAddrDebounce);
+    const addr = suiAddressInput.value.trim();
+    updateExplorerLink(addr);
+    if (addr === '' || (addr.startsWith('0x') && addr.length >= 64)) {
+      const current = await api.getSettings();
+      if (current.suiAddress !== addr) {
+        await api.updateSettings({ suiAddress: addr, suiEnabled: addr !== '' });
+        showToast('Đã lưu địa chỉ ví SUI thành công!', 'success');
+      }
+    }
+  };
+
   suiAddressInput?.addEventListener('input', () => {
     if (suiAddrDebounce) clearTimeout(suiAddrDebounce);
-    suiAddrDebounce = setTimeout(async () => {
-        const addr = suiAddressInput.value.trim();
-        updateExplorerLink(addr);
-        await api.updateSettings({ suiAddress: addr });
-    }, 500);
+    suiAddrDebounce = setTimeout(saveSuiAddress, 500);
   });
+
+  suiAddressInput?.addEventListener('change', saveSuiAddress);
+
+  suiAddressInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      suiAddressInput.blur(); // Tự động kích hoạt sự kiện change để lưu ngay lập tức
+    }
+  });
+
   document.getElementById('copy-address-btn')?.addEventListener('click', () => {
     const val = suiAddressInput.value.trim();
     if (val) {
@@ -445,6 +481,28 @@ function setupGlobalEventListeners() {
       }
     });
   }
+
+  document.getElementById('sync-browser-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const isDev = window.location.port !== '' || window.location.hostname === '127.0.0.1';
+    const syncUrl = isDev ? 'http://localhost:3000/sync-login' : 'https://onchain.minipet.xyz/sync-login';
+    if (api.open_url) {
+      api.open_url(syncUrl);
+    } else {
+      window.open(syncUrl, '_blank');
+    }
+  });
+
+  document.getElementById('disconnect-wallet-btn')?.addEventListener('click', async () => {
+    const lang = currentSettings?.language || 'en';
+    const isVi = lang === 'vi';
+    const confirmMsg = isVi ? 'Bạn có muốn ngắt kết nối ví SUI không?' : 'Are you sure you want to disconnect your SUI wallet?';
+    const successMsg = isVi ? 'Ngắt kết nối ví thành công!' : 'Wallet disconnected successfully!';
+    if (confirm(confirmMsg)) {
+      await api.updateSettings({ suiAddress: '', suiEnabled: false });
+      showToast(successMsg);
+    }
+  });
 
   document.getElementById('refresh-blockchain-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('refresh-blockchain-btn');
@@ -483,11 +541,14 @@ function populateForm(settings: UserSettings): void {
   const geminiApiKeyInp = document.getElementById('gemini-api-key-input') as HTMLInputElement;
   const agentAddressInp = document.getElementById('agent-address-input') as HTMLInputElement;
 
+  // Cập nhật trực tiếp trạng thái UI từ settings thực tế
+  updateAiStatusUI(settings.aiEnabled || false);
+  updateSuiStatusUI(settings.suiEnabled || false);
+
   if (aiToggle) {
     aiToggle.checked = settings.aiEnabled || false;
-    updateAiStatusUI(aiToggle.checked);
   }
-  if (geminiApiKeyInp) {
+  if (geminiApiKeyInp && document.activeElement !== geminiApiKeyInp) {
     geminiApiKeyInp.value = settings.geminiApiKey || '';
   }
   if (agentAddressInp) {
@@ -511,17 +572,46 @@ function populateForm(settings: UserSettings): void {
 
   if (suiToggle) {
     suiToggle.checked = settings.suiEnabled || false;
-    updateSuiStatusUI(suiToggle.checked);
-    if (suiToggle.checked) {
-      refreshSuiBalance();
-      refreshSuiAssets();
-      refreshSuiActivity();
-    }
   }
-  if (suiAddr) {
+  if (settings.suiEnabled) {
+    refreshSuiBalance();
+    refreshSuiAssets();
+    refreshSuiActivity();
+  }
+  if (suiAddr && document.activeElement !== suiAddr) {
     suiAddr.value = settings.suiAddress || '';
     updateExplorerLink(settings.suiAddress || '');
   }
+
+  const syncBtn = document.getElementById('sync-browser-btn');
+  const disconnectBtn = document.getElementById('disconnect-wallet-btn');
+  const hasWallet = !!settings.suiAddress;
+  if (syncBtn) syncBtn.style.display = hasWallet ? 'none' : 'flex';
+  if (disconnectBtn) disconnectBtn.style.display = hasWallet ? 'flex' : 'none';
+
+  renderFastTransferList(settings);
+}
+
+function renderFastTransferList(settings: any) {
+  const container = document.getElementById('fast-transfer-list');
+  if (!container) return;
+  
+  const wallets: string[] = settings.fastTransferWallets || [];
+  
+  if (wallets.length === 0) {
+    container.innerHTML = `
+      <li style="padding: 12px; text-align: center; color: rgba(255,255,255,0.5); font-size: 13px;">
+        Empty whitelist
+      </li>
+    `;
+    return;
+  }
+  
+  container.innerHTML = wallets.map(wallet => `
+    <li style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #a78bfa; word-break: break-all;">
+      ${wallet}
+    </li>
+  `).join('');
 }
 
 function updateSuiStatusUI(enabled: boolean) {

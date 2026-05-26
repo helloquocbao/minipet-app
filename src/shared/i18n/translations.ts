@@ -44,8 +44,12 @@ export const translations: Record<Language, any> = {
     noActivity: 'No recent activity detected',
     viewOnExplorer: 'View on Explorer',
     addressCopied: 'Address copied to clipboard!',
+    syncFromBrowser: 'Sync with Browser',
+    disconnectWallet: 'Disconnect Wallet',
     aiAgent: 'AI Agent',
     aiAgentSettings: 'AI Agent Settings',
+    aiWeb3: 'AI & Web3',
+    aiWeb3Settings: 'AI & Web3 Settings',
     aiCompanion: 'AI Chat Companion',
     aiHint: 'Enable Gemini-powered AI chat and smart context tool-calling.',
     geminiApiKey: 'Gemini API Key',
@@ -294,7 +298,15 @@ export const translations: Record<Language, any> = {
     capTimerTitle: 'Pomodoro Timer',
     capTimerDesc: 'Control Pomodoro via natural language.',
     modelDownloading: 'Downloading my big fat brain... {percent}% ({downloaded}MB/{total}MB) 🧠. Wait a bit, getting smarter!',
-    modelDownloadComplete: 'Download complete! Powering up my brain cells, get ready to be amazed! 🚀'
+    modelDownloadComplete: 'Download complete! Powering up my brain cells, get ready to be amazed! 🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (Local Sidecar) - Active',
+    modelGeminiFlash: 'Gemini 1.5 Flash (Coming on Mainnet)',
+    modelGeminiPro: 'Gemini 1.5 Pro (Coming on Mainnet)',
+    modelDeepSeekR1: 'DeepSeek R1 (Coming on Mainnet)',
+    modelQwen7B: 'Qwen 2.5 7B (Coming on Mainnet)',
+    aiModelLabel: 'Active AI Model (Local AI)',
+    aiModelHint: 'Connecting via C++ core at localhost:8080. 100% Offline & privacy-first.',
+    agentWalletHint: 'Fund this wallet with SUI to allow your Pet to execute transactions for you.'
   },
   vi: {
     settingsTitle: 'Cài đặt MiniPet',
@@ -339,8 +351,12 @@ export const translations: Record<Language, any> = {
     noActivity: 'Không có hoạt động nào',
     viewOnExplorer: 'Xem trên Explorer',
     addressCopied: 'Đã sao chép địa chỉ!',
+    syncFromBrowser: 'Đồng bộ từ Trình duyệt',
+    disconnectWallet: 'Ngắt kết nối ví',
     aiAgent: 'AI Agent',
     aiAgentSettings: 'Cài đặt AI Agent',
+    aiWeb3: 'AI & Web3',
+    aiWeb3Settings: 'Cài đặt AI & Web3',
     aiCompanion: 'Bạn đồng hành AI',
     aiHint: 'Bật chat AI với Gemini và gọi công cụ ngữ cảnh thông minh.',
     geminiApiKey: 'Gemini API Key',
@@ -607,7 +623,15 @@ export const translations: Record<Language, any> = {
     capTimerTitle: 'Đồng Hồ Pomodoro',
     capTimerDesc: 'Điều khiển Pomodoro bằng giọng nói/văn bản.',
     modelDownloading: 'Đang ship bộ não siêu cấp vũ trụ về... {percent}% ({downloaded}MB/{total}MB) 🧠. Sen đợi tí nha, shipper sắp tới rồi!',
-    modelDownloadComplete: 'Tải xong rồi! Đang khởi động não, chuẩn bị mở mang tầm mắt nha sen! 🚀'
+    modelDownloadComplete: 'Tải xong rồi! Đang khởi động não, chuẩn bị mở mang tầm mắt nha sen! 🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (Local Sidecar) - Đang chạy',
+    modelGeminiFlash: 'Gemini 1.5 Flash (Chờ lên Mainnet)',
+    modelGeminiPro: 'Gemini 1.5 Pro (Chờ lên Mainnet)',
+    modelDeepSeekR1: 'DeepSeek R1 (Chờ lên Mainnet)',
+    modelQwen7B: 'Qwen 2.5 7B (Chờ lên Mainnet)',
+    aiModelLabel: 'Mô hình đang chạy (Local AI)',
+    aiModelHint: 'Đang kết nối qua lõi C++ localhost:8080. Đảm bảo 100% Offline & Bảo mật tuyệt đối dữ liệu cá nhân.',
+    agentWalletHint: 'Nạp thêm SUI vào ví này để cho phép Pet thay mặt bạn thực hiện các giao dịch.'
   },
   fr: {
     settingsTitle: 'Paramètres MiniPet',
@@ -709,6 +733,8 @@ export const translations: Record<Language, any> = {
       '{pet} : {message} (+{amount} {coin})',
       'Nouveau message de {pet} : {message} ✉️'
     ],
+    aiWeb3: 'IA & Web3',
+    aiWeb3Settings: 'Paramètres IA & Web3',
     agentAddress: 'Portefeuille Agent IA',
     agentCapabilities: 'Capacités de l\'Agent',
     capChatTitle: 'Chat Interactif',
@@ -720,7 +746,15 @@ export const translations: Record<Language, any> = {
     capTimerTitle: 'Minuteur Pomodoro',
     capTimerDesc: 'Contrôlez Pomodoro en langage naturel.',
     modelDownloading: 'Téléchargement de mon super cerveau... {percent}% ({downloaded}MB/{total}MB) 🧠. Attends un peu, je deviens plus intelligent !',
-    modelDownloadComplete: 'Téléchargement terminé ! Démarrage du cerveau en cours, prépare-toi à être impressionné ! 🚀'
+    modelDownloadComplete: 'Téléchargement terminé ! Démarrage du cerveau en cours, prépare-toi à être impressionné ! 🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (Sidecar local) - Actif',
+    modelGeminiFlash: 'Gemini 1.5 Flash (Bientôt sur le Mainnet)',
+    modelGeminiPro: 'Gemini 1.5 Pro (Bientôt sur le Mainnet)',
+    modelDeepSeekR1: 'DeepSeek R1 (Bientôt sur le Mainnet)',
+    modelQwen7B: 'Qwen 2.5 7B (Bientôt sur le Mainnet)',
+    aiModelLabel: 'Modèle IA actif (IA locale)',
+    aiModelHint: 'Connexion via le noyau C++ sur localhost:8080. 100% hors ligne et respect de la vie privée.',
+    agentWalletHint: 'Alimentez ce portefeuille en SUI pour permettre à votre animal d\'effectuer des transactions pour vous.'
   },
   zh: {
     settingsTitle: 'MiniPet 设置',
@@ -819,6 +853,8 @@ export const translations: Record<Language, any> = {
       '{pet}: {message} (+{amount} {coin})',
       '来自 {pet} 的新消息: {message} ✉️'
     ],
+    aiWeb3: 'AI & Web3',
+    aiWeb3Settings: 'AI & Web3 设置',
     agentAddress: 'AI 代理钱包',
     agentCapabilities: '代理功能',
     capChatTitle: '互动聊天',
@@ -830,7 +866,15 @@ export const translations: Record<Language, any> = {
     capTimerTitle: '番茄时钟',
     capTimerDesc: '通过自然语言控制番茄时钟。',
     modelDownloading: '正在下载我的超级大脑... {percent}% ({downloaded}MB/{total}MB) 🧠. 等一下哈，马上就变聪明了！',
-    modelDownloadComplete: '下载完成！正在启动大脑，准备好大开眼界吧！🚀'
+    modelDownloadComplete: '下载完成！正在启动大脑，准备好大开眼界吧！🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (本地侧车) - 激活',
+    modelGeminiFlash: 'Gemini 1.5 Flash (等待上主网)',
+    modelGeminiPro: 'Gemini 1.5 Pro (等待上主网)',
+    modelDeepSeekR1: 'DeepSeek R1 (等待上主网)',
+    modelQwen7B: 'Qwen 2.5 7B (等待上主网)',
+    aiModelLabel: '运行中的模型 (本地 AI)',
+    aiModelHint: '通过 localhost:8080 的 C++ 内核连接。确保 100% 离线和绝对个人数据隐私。',
+    agentWalletHint: '向此钱包存入 SUI，以允许您的宠物为您执行交易。'
   },
   it: {
     settingsTitle: 'Impostazioni MiniPet',
@@ -929,6 +973,8 @@ export const translations: Record<Language, any> = {
       '{pet}: {message} (+{amount} {coin})',
       'Nuovo messaggio da {pet}: {message} ✉️'
     ],
+    aiWeb3: 'AI & Web3',
+    aiWeb3Settings: 'Impostazioni AI & Web3',
     agentAddress: 'Portafoglio Agente IA',
     agentCapabilities: 'Capacità dell\'Agente',
     capChatTitle: 'Chat Interattiva',
@@ -940,7 +986,15 @@ export const translations: Record<Language, any> = {
     capTimerTitle: 'Timer Pomodoro',
     capTimerDesc: 'Controlla Pomodoro in linguaggio naturale.',
     modelDownloading: 'Scaricamento del mio super cervello... {percent}% ({downloaded}MB/{total}MB) 🧠. Aspetta un attimo, sto diventando più intelligente!',
-    modelDownloadComplete: 'Download completato! Avvio del cervello in corso, preparati a rimanere stupito! 🚀'
+    modelDownloadComplete: 'Download completato! Avvio del cervello in corso, preparati a rimanere stupito! 🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (Sidecar locale) - Attivo',
+    modelGeminiFlash: 'Gemini 1.5 Flash (In arrivo su Mainnet)',
+    modelGeminiPro: 'Gemini 1.5 Pro (In arrivo su Mainnet)',
+    modelDeepSeekR1: 'DeepSeek R1 (In arrivo su Mainnet)',
+    modelQwen7B: 'Qwen 2.5 7B (In arrivo su Mainnet)',
+    aiModelLabel: 'Modello AI attivo (AI locale)',
+    aiModelHint: 'Connessione tramite core C++ a localhost:8080. 100% offline e priorità alla privacy.',
+    agentWalletHint: 'Ricarica questo portafoglio con SUI per consentire al tuo animale di eseguire transazioni per te.'
   },
   ko: {
     settingsTitle: 'MiniPet 설정',
@@ -1040,6 +1094,8 @@ export const translations: Record<Language, any> = {
       '{pet}: {message} (+{amount} {coin})',
       '{pet}님으로부터 새 메시지가 도착했습니다: {message} ✉️'
     ],
+    aiWeb3: 'AI & Web3',
+    aiWeb3Settings: 'AI & Web3 설정',
     agentAddress: 'AI 에이전트 지갑',
     agentCapabilities: '에이전트 기능',
     capChatTitle: '대화형 채팅',
@@ -1051,6 +1107,14 @@ export const translations: Record<Language, any> = {
     capTimerTitle: '뽀모도로 타이머',
     capTimerDesc: '자연어로 뽀모도로를 제어하세요.',
     modelDownloading: '슈퍼 브레인 다운로드 중... {percent}% ({downloaded}MB/{total}MB) 🧠. 집사야 조금만 기다려, 똑똑해지는 중이야!',
-    modelDownloadComplete: '다운로드 완료! 두뇌 가동 시작, 깜짝 놀랄 준비해라 집사! 🚀'
+    modelDownloadComplete: '다운로드 완료! 두뇌 가동 시작, 깜짝 놀랄 준비해라 집사! 🚀',
+    modelQwenActive: 'Qwen 2.5 0.5B (로컬 사이드카) - 활성',
+    modelGeminiFlash: 'Gemini 1.5 Flash (메인넷 대기 중)',
+    modelGeminiPro: 'Gemini 1.5 Pro (메인넷 대기 중)',
+    modelDeepSeekR1: 'DeepSeek R1 (메인넷 대기 중)',
+    modelQwen7B: 'Qwen 2.5 7B (메인넷 대기 중)',
+    aiModelLabel: '실행 중인 모델 (로컬 AI)',
+    aiModelHint: 'localhost:8080의 C++ 코어를 통해 연결됩니다. 100% 오프라인 및 완벽한 개인정보 보호 보장.',
+    agentWalletHint: '이 지갑에 SUI를 충전하여 펫이 귀하를 대신해 거래를 수행할 수 있도록 하세요.'
   }
 };
