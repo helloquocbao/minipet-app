@@ -381,14 +381,14 @@ pub fn get_browser_url(browser: String) -> Option<String> {
 #[tauri::command]
 pub fn check_model_exists(app: AppHandle) -> bool {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b-sui.gguf");
     model_path.exists()
 }
 
 #[tauri::command]
 pub async fn download_model(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b-sui.gguf");
     
     if model_path.exists() {
         return Ok(());
@@ -430,7 +430,7 @@ pub async fn download_model(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn start_ai_server(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
+    let model_path = app_data_dir.join("qwen2.5-1.5b-sui.gguf");
     
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let mut bin_path = resource_dir.join("bin/llama-server-aarch64-apple-darwin");

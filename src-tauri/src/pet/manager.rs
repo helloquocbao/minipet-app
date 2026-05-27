@@ -188,12 +188,13 @@ impl PetManager {
             }
         }
 
-        // Ensure at least one active pet
+        // Ensure at least one active pet (prioritize 'lyra' as default)
         if !self.pets.is_empty() && self.settings.active_pets.is_empty() {
-            let slug = self.pets[0]
-                .manifest
-                .slug
-                .clone()
+            let slug = self.pets
+                .iter()
+                .find(|p| p.manifest.slug.as_deref() == Some("lyra"))
+                .or_else(|| self.pets.first())
+                .and_then(|p| p.manifest.slug.clone())
                 .unwrap_or_else(|| "unknown".to_string());
             self.settings.active_pets.push(PetInstance {
                 id: Uuid::new_v4().to_string(),
@@ -207,11 +208,44 @@ impl PetManager {
         }
 
         // Elect Master: The first instance in active_pets
+        self.enforce_wallet_restrictions();
         if let Some(first) = self.settings.active_pets.first() {
             self.master_instance_id = Some(first.id.clone());
         }
 
         Ok(())
+    }
+
+    fn enforce_wallet_restrictions(&mut self) {
+        if self.settings.sui_address.is_empty() || !self.settings.sui_enabled {
+            // Disconnected: Only Lyra is allowed
+            self.settings.active_pets.retain(|p| p.slug == "lyra");
+            if self.settings.active_pets.is_empty() {
+                self.settings.active_pets.push(PetInstance {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    slug: "lyra".to_string(),
+                    x: self.default_x,
+                    y: self.default_y,
+                    scale: self.settings.scale,
+                });
+            }
+            self.settings.active_pet_slug = Some("lyra".to_string());
+        } else {
+            // Connected: Both Lyra and NFT pets are allowed
+            self.settings.active_pets.retain(|p| p.slug == "lyra" || p.slug.starts_with("nft-"));
+            if self.settings.active_pets.is_empty() {
+                self.settings.active_pets.push(PetInstance {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    slug: "lyra".to_string(),
+                    x: self.default_x,
+                    y: self.default_y,
+                    scale: self.settings.scale,
+                });
+                self.settings.active_pet_slug = Some("lyra".to_string());
+            } else {
+                self.settings.active_pet_slug = self.settings.active_pets.first().map(|p| p.slug.clone());
+            }
+        }
     }
 
     pub fn get_installed_pets(&self) -> Vec<PetListItem> {
@@ -473,6 +507,7 @@ impl PetManager {
                 }
             }
         }
+        self.enforce_wallet_restrictions();
         self.save_settings().await;
     }
 

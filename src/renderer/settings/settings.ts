@@ -105,8 +105,25 @@ async function loadNftPets(): Promise<PetListItem[]> {
 async function updateCachedPetList() {
   const api = (window as any).electronAPI;
   if (!api) return;
-  const nftPets = await loadNftPets();
-  cachedPetList = [...nftPets];
+  
+  const { invoke } = await import('@tauri-apps/api/core');
+  const lyraDataUrl = await invoke<string>('get_spritesheet_data', { slug: 'lyra' }).catch(() => '');
+  
+  const lyraItem = {
+    slug: 'lyra',
+    displayName: 'Lyra',
+    description: 'A cute white fluffy cat companion.',
+    thumbnailPath: lyraDataUrl,
+    isDefault: true,
+    isActive: false
+  };
+
+  if (!currentSettings || !currentSettings.suiEnabled || !currentSettings.suiAddress) {
+    cachedPetList = [lyraItem];
+  } else {
+    const nftPets = await loadNftPets();
+    cachedPetList = [lyraItem, ...nftPets];
+  }
 }
 
 /**

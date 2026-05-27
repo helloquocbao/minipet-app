@@ -72,8 +72,7 @@ export class SuiMonitor {
         this.checkEvents(),
         this.checkBalance(),
         this.checkPhishingNFTs(),
-        this.checkDeFiHealth(),
-        this.checkDailyReminders()
+        this.checkDeFiHealth()
       ]);
     } catch (error) {
       console.error('[SuiMonitor] Polling error:', error);
@@ -207,23 +206,6 @@ export class SuiMonitor {
     } catch (e) {
       console.error('[SuiMonitor] DeFi health check failed', e);
     }
-  }
-
-  // --- Agent 6: Daily Airdrop & Task Reminders ---
-  private async checkDailyReminders() {
-    const api = (window as any).electronAPI;
-    const now = Date.now();
-    // Daily check-in alerts (every 3 hours to be naturally engaging, or 10800000ms)
-    if (now - this.lastReminderAlertTime < 10800000) return;
-
-    this.lastReminderAlertTime = now;
-    const reminders = [
-      "🎁 Sếp ơi! Đã đến giờ đi claim Faucet và làm nhiệm vụ hằng ngày để tích điểm Airdrop rồi! Chiến thôi sếp! 🤤",
-      "🚀 Đừng quên kiểm tra các nhiệm vụ check-in Testnet hôm nay để không bỏ lỡ điểm thưởng airdrop nào nha boss! 🐾",
-      "💡 Tích tiểu thành đại! Mở ví ra và check-in các dApp DeFi để nâng cao thứ hạng ví (Wallet Ranking) đi sếp ơi! 🏆"
-    ];
-    const picked = reminders[Math.floor(Math.random() * reminders.length)];
-    api.broadcastPetEvent('pet:say', { text: picked, priority: true });
   }
 
   // --- Legacy Event check for NFT contract ---

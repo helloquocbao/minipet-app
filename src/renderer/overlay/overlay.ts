@@ -528,6 +528,13 @@ async function init(): Promise<void> {
   } catch (err) {
     console.error("[Local AI] Boot failed:", err);
   }
+
+  // Greeting on startup
+  setTimeout(() => {
+    const t = translations[currentLanguage];
+    stateMachine.forceState('happy');
+    showSpeech(pickUniqueRandom(t.hello), 4000, true, 'Startup');
+  }, 1000);
 }
 
 /**
@@ -1232,50 +1239,67 @@ async function handleLocalChat(userText: string) {
     function friendlyError(rawError: string, action: string): string {
       const e = rawError.toLowerCase();
       
-      // Insufficient balance / gas
+      // 1. Gas / Balance Errors
       if (e.includes('insufficient') && (e.includes('gas') || e.includes('balance') || e.includes('coin'))) {
-        return `❌ ${action} thất bại: Không đủ SUI trong ví! Nạp thêm SUI rồi thử lại nhé.`;
+        return `❌ ${action} thất bại: Số dư ví không đủ SUI để thực hiện giao dịch và trả phí gas! Sếp nạp thêm SUI vào ví nhé.`;
       }
       if (e.includes('insufficientcoinbalance') || e.includes('not enough coin')) {
-        return `❌ ${action} thất bại: Không đủ tiền trong ví!`;
+        return `❌ ${action} thất bại: Số dư token trong ví không đủ để thực hiện yêu cầu này!`;
+      }
+      if (e.includes('dryrunfailed') || e.includes('dry run failed')) {
+        if (e.includes('gasinbalance') || e.includes('gaslimit')) {
+          return `❌ ${action} thất bại: Ước tính phí gas bị lỗi. Có thể số dư ví quá thấp để làm phí giao dịch.`;
+        }
+        return `❌ ${action} thất bại: Thử nghiệm giao dịch bị lỗi (Dry Run Failed). Vui lòng kiểm tra lại số dư hoặc địa chỉ nhận.`;
       }
       
-      // Network / connection errors
-      if (e.includes('network') || e.includes('fetch') || e.includes('econnrefused') || e.includes('enotfound')) {
-        return `❌ ${action} thất bại: Lỗi kết nối mạng! Kiểm tra internet rồi thử lại.`;
+      // 2. Network / Node Connection Errors
+      if (e.includes('network') || e.includes('fetch') || e.includes('econnrefused') || e.includes('enotfound') || e.includes('failed to fetch')) {
+        return `❌ ${action} thất bại: Lỗi kết nối mạng hoặc máy chủ blockchain SUI không phản hồi! Sếp kiểm tra lại internet hoặc link RPC trong Cài đặt nhé.`;
       }
       if (e.includes('timeout') || e.includes('timed out')) {
-        return `❌ ${action} thất bại: Hết thời gian chờ! Mạng SUI có thể đang bận, thử lại sau.`;
+        return `❌ ${action} thất bại: Yêu cầu bị hết thời gian chờ! Mạng lưới SUI có thể đang quá tải, sếp thử lại sau nhé.`;
       }
       
-      // Invalid address
+      // 3. Address Errors
       if (e.includes('invalid') && (e.includes('address') || e.includes('hex'))) {
-        return `❌ ${action} thất bại: Địa chỉ ví không hợp lệ! Kiểm tra lại địa chỉ 0x...`;
+        return `❌ ${action} thất bại: Địa chỉ ví nhận không hợp lệ! Sếp kiểm tra kỹ lại định dạng địa chỉ SUI (bắt đầu bằng 0x...).`;
       }
       
-      // Object not found
+      // 4. Object / NFT / Token errors
       if (e.includes('object not found') || e.includes('objectnotfound') || e.includes('not exist')) {
-        return `❌ ${action} thất bại: Không tìm thấy đối tượng trên blockchain. Pet hoặc token có thể đã bị xóa.`;
+        return `❌ ${action} thất bại: Vật phẩm hoặc token không tồn tại trên blockchain hoặc đã được chuyển đi nơi khác.`;
       }
       
-      // Transaction execution error
+      // 5. Smart Contract Abort / Move Abort Errors
       if (e.includes('moveabort') || e.includes('execution failure') || e.includes('move abort')) {
-        return `❌ ${action} thất bại: Giao dịch bị từ chối bởi smart contract. Kiểm tra lại điều kiện giao dịch.`;
+        if (e.includes('abort code 1') || e.includes('code 1')) {
+          return `❌ ${action} thất bại: Giao dịch bị từ chối! Có thể sếp đã thực hiện thao tác này hôm nay rồi.`;
+        }
+        if (e.includes('abort code 2') || e.includes('code 2')) {
+          return `❌ ${action} thất bại: Sai quyền truy cập hoặc điều kiện smart contract chưa được thỏa mãn.`;
+        }
+        return `❌ ${action} thất bại: Smart Contract từ chối giao dịch (Move Abort). Có thể do vi phạm quy tắc của hợp đồng thông minh.`;
       }
       
-      // Rate limit
-      if (e.includes('429') || e.includes('rate limit') || e.includes('too many')) {
-        return `❌ ${action} thất bại: Gửi quá nhiều yêu cầu! Đợi vài giây rồi thử lại.`;
+      // 6. Rate limit
+      if (e.includes('429') || e.includes('rate limit') || e.includes('too many requests')) {
+        return `❌ ${action} thất bại: Tần suất gửi yêu cầu quá nhanh! Sếp vui lòng đợi 5-10 giây rồi thử lại nha.`;
       }
 
-      // Secret key / auth
-      if (e.includes('secret') || e.includes('keypair') || e.includes('invalid key')) {
-        return `❌ ${action} thất bại: Khóa ví burner bị lỗi! Kiểm tra lại cấu hình trong Settings.`;
+      // 7. Secret key / Burner Wallet Configuration
+      if (e.includes('secret') || e.includes('keypair') || e.includes('invalid key') || e.includes('cannot sign')) {
+        return `❌ ${action} thất bại: Khóa bảo mật ví burner của AI Agent bị lỗi hoặc chưa đúng định dạng! Sếp vui lòng kiểm tra lại cấu hình trong phần Settings.`;
+      }
+
+      // 8. User Reject
+      if (e.includes('reject') || e.includes('user rejected') || e.includes('cancelled')) {
+        return `❌ ${action} thất bại: Giao dịch đã bị hủy bỏ bởi sếp!`;
       }
       
-      // Fallback: show shortened raw error
-      const short = rawError.length > 80 ? rawError.substring(0, 80) + '...' : rawError;
-      return `❌ ${action} thất bại: ${short}`;
+      // Fallback: show shortened raw error but still looking clean
+      const short = rawError.length > 120 ? rawError.substring(0, 120) + '...' : rawError;
+      return `❌ ${action} thất bại do lỗi blockchain: "${short}"`;
     }
 
     // Detect <tool_call> tags in text content
@@ -1338,11 +1362,11 @@ async function handleLocalChat(userText: string) {
               toolResult = "❌ Thiếu số lượng SUI cần swap!";
             } else {
               const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-              const { SuiClient, getFullnodeUrl } = await import('@mysten/sui/client');
+              const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
               
               const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
-              const client = new SuiClient({ url: getFullnodeUrl('testnet') });
+              const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
               
               const tx = new Transaction();
               const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
@@ -1389,11 +1413,11 @@ async function handleLocalChat(userText: string) {
                 toolResult = "⚠️ Địa chỉ ví này hơi lạ, bạn có chắc chắn muốn chuyển không? Chat \"oke\" để xác nhận nhé!";
               } else {
                 const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-                const { SuiClient, getFullnodeUrl } = await import('@mysten/sui/client');
+                const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
                 const { Transaction } = await import('@mysten/sui/transactions');
                 
                 const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
-                const client = new SuiClient({ url: getFullnodeUrl('testnet') });
+                const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
                 
                 const tx = new Transaction();
                 const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
@@ -1445,11 +1469,11 @@ async function handleLocalChat(userText: string) {
               toolResult = "❌ Thiếu địa chỉ ví pet cần gõ đầu!";
             } else {
               const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-              const { SuiClient, getFullnodeUrl } = await import('@mysten/sui/client');
+              const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
 
               const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
-              const client = new SuiClient({ url: getFullnodeUrl('testnet') });
+              const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
 
               // 1. Tìm Object ID của PetNFT của người dùng
               let petObjectId = "";
@@ -1529,11 +1553,11 @@ async function handleLocalChat(userText: string) {
               toolResult = "❌ Thiếu thông tin! Cần địa chỉ ví, số lượng SUI và lời nhắn.";
             } else {
               const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-              const { SuiClient, getFullnodeUrl } = await import('@mysten/sui/client');
+              const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
 
               const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
-              const client = new SuiClient({ url: getFullnodeUrl('testnet') });
+              const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
 
               // 1. Tìm Object ID của PetNFT của người dùng
               let petObjectId = "";
