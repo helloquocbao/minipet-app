@@ -211,10 +211,13 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only http:// and https:// URLs are allowed for security reasons.".to_string());
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -223,14 +226,14 @@ pub fn open_url(url: String) -> Result<(), String> {
         std::process::Command::new("cmd")
             .arg("/C")
             .arg("start")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
