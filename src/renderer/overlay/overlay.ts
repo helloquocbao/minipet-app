@@ -463,7 +463,11 @@ async function init(): Promise<void> {
 
   (window.electronAPI as any).onCustomEvent(`user-chat-submit-${instanceId}`, (payload: any) => {
     if (payload && payload.text) {
-      handleLocalChat(payload.text);
+      if (pendingTransfer) {
+        handlePendingTransferClarification(payload.text);
+      } else {
+        handleLocalChat(payload.text);
+      }
     }
   });
 
@@ -1177,10 +1181,100 @@ const localChatHistory: any[] = [
   { role: "system", content: buildSystemPrompt(currentLanguage || 'en') }
 ];
 
+interface PendingTransfer {
+  recipientAlias: string;
+  amount: number;
+  candidates: { alias: string; address: string }[];
+}
+let pendingTransfer: PendingTransfer | null = null;
+
+async function handlePendingTransferClarification(userText: string) {
+  const text = userText.trim().toLowerCase();
+  
+  if (!pendingTransfer) return;
+
+  if (text === 'hủy' || text === 'cancel') {
+    pendingTransfer = null;
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: "Đã hủy giao dịch chuyển tiền." });
+    return;
+  }
+
+  let selectedAddress = '';
+
+  const idx = parseInt(text) - 1;
+  if (!isNaN(idx) && idx >= 0 && idx < pendingTransfer.candidates.length) {
+    selectedAddress = pendingTransfer.candidates[idx].address;
+  } else {
+    if (text.startsWith('0x') && text.length >= 64) {
+      selectedAddress = userText.trim();
+    } else {
+      const found = pendingTransfer.candidates.find(c => c.address.toLowerCase().includes(text));
+      if (found) {
+        selectedAddress = found.address;
+      }
+    }
+  }
+
+  if (selectedAddress) {
+    const amount = pendingTransfer.amount;
+    const recipientAlias = pendingTransfer.candidates.find(c => c.address === selectedAddress)?.alias || selectedAddress;
+    pendingTransfer = null;
+
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: "💸 Đang xử lý chuyển khoản..." });
+
+    try {
+      const savedSettings: any = await window.electronAPI.getSettings();
+      if (!savedSettings.agentSecretKey) {
+        const errText = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+        localChatHistory.push({ role: "assistant", content: errText });
+        (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: errText });
+        return;
+      }
+
+      const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+      const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
+      const { Transaction } = await import('@mysten/sui/transactions');
+      
+      const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
+      const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
+      
+      const tx = new Transaction();
+      const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
+      tx.transferObjects([coin], selectedAddress);
+      
+      const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+      const successText = `✅ Đã chuyển ${amount} SUI thành công cho ${recipientAlias}! 🎉`;
+      
+      localChatHistory.push({ role: "assistant", content: successText });
+      (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: successText });
+    } catch (e: any) {
+      const errMsg = e.message || e.toString();
+      let friendlyMsg = errMsg;
+      const lowerErr = errMsg.toLowerCase();
+      if (lowerErr.includes('insufficient') && (lowerErr.includes('gas') || lowerErr.includes('balance'))) {
+        friendlyMsg = `❌ Chuyển tiền thất bại: Số dư ví không đủ SUI để thực hiện giao dịch và trả phí gas!`;
+      } else if (lowerErr.includes('reject') || lowerErr.includes('user rejected') || lowerErr.includes('cancelled')) {
+        friendlyMsg = `❌ Chuyển tiền thất bại: Giao dịch đã bị hủy bỏ bởi sếp!`;
+      } else {
+        friendlyMsg = `❌ Chuyển tiền thất bại: ${errMsg}`;
+      }
+      
+      localChatHistory.push({ role: "assistant", content: friendlyMsg });
+      (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: friendlyMsg });
+    }
+  } else {
+    let reply = `❌ Lựa chọn không hợp lệ. Vui lòng chọn số (1-${pendingTransfer.candidates.length}), nhập địa chỉ ví, hoặc chat "hủy":\n`;
+    pendingTransfer.candidates.forEach((cand, idx) => {
+      reply += `${idx + 1}. ${cand.alias} (${cand.address.substring(0, 6)}...${cand.address.substring(cand.address.length - 4)})\n`;
+    });
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: reply });
+  }
+}
+
 async function handleLocalChat(userText: string) {
   const savedSettings: any = await window.electronAPI.getSettings();
 
-  const FAST_TRANSFER_WALLETS: string[] = savedSettings?.fastTransferWallets || [];
+  const FAST_TRANSFER_WALLETS: { alias: string; address: string }[] = savedSettings?.fastTransferWallets || [];
   
   try {
     // Dynamic system prompt update with language from settings + current local time
@@ -1408,10 +1502,35 @@ async function handleLocalChat(userText: string) {
             if (!recipient || !amount) {
               toolResult = "❌ Thiếu địa chỉ ví nhận hoặc số lượng SUI!";
             } else {
-              const isWhitelisted = FAST_TRANSFER_WALLETS.includes(recipient);
-              if (!isWhitelisted && !confirmed) {
-                toolResult = "⚠️ Địa chỉ ví này hơi lạ, bạn có chắc chắn muốn chuyển không? Chat \"oke\" để xác nhận nhé!";
-              } else {
+              const candidates = FAST_TRANSFER_WALLETS.filter(item => 
+                item.alias.toLowerCase() === recipient.toLowerCase() ||
+                item.address.toLowerCase() === recipient.toLowerCase()
+              );
+              
+              if (candidates.length === 0) {
+                if (recipient.startsWith('0x') && recipient.length >= 64) {
+                  if (!confirmed) {
+                    toolResult = "⚠️ Địa chỉ ví này hơi lạ, bạn có chắc chắn muốn chuyển không? Chat \"oke\" để xác nhận nhé!";
+                  } else {
+                    const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+                    const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
+                    const { Transaction } = await import('@mysten/sui/transactions');
+                    
+                    const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
+                    const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
+                    
+                    const tx = new Transaction();
+                    const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
+                    tx.transferObjects([coin], recipient);
+                    
+                    const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                    toolResult = `✅ Đã chuyển ${amount} SUI thành công! 🎉`;
+                  }
+                } else {
+                  toolResult = `❌ Không tìm thấy ví nhận nào có alias hoặc địa chỉ "${recipient}" trong whitelist.`;
+                }
+              } else if (candidates.length === 1) {
+                const resolvedAddress = candidates[0].address;
                 const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
                 const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
                 const { Transaction } = await import('@mysten/sui/transactions');
@@ -1421,10 +1540,23 @@ async function handleLocalChat(userText: string) {
                 
                 const tx = new Transaction();
                 const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
-                tx.transferObjects([coin], recipient);
+                tx.transferObjects([coin], resolvedAddress);
                 
                 const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
-                toolResult = `✅ Đã chuyển ${amount} SUI thành công! 🎉`;
+                toolResult = `✅ Đã chuyển ${amount} SUI thành công cho ${candidates[0].alias}! 🎉`;
+              } else {
+                pendingTransfer = {
+                  recipientAlias: recipient,
+                  amount: amount,
+                  candidates: candidates
+                };
+                
+                let reply = `⚠️ Có nhiều địa chỉ ví khớp với danh bạ "${recipient}":\n`;
+                candidates.forEach((cand, idx) => {
+                  reply += `${idx + 1}. ${cand.alias} (${cand.address.substring(0, 6)}...${cand.address.substring(cand.address.length - 4)})\n`;
+                });
+                reply += `Sếp vui lòng chọn số (1-${candidates.length}) hoặc nhập địa chỉ ví để chuyển. Chat "hủy" để hủy.`;
+                toolResult = reply;
               }
             }
           } catch(e: any) {
@@ -1433,30 +1565,39 @@ async function handleLocalChat(userText: string) {
         }
       } else if (fnName === "add_fast_transfer_wallet") {
         const address = args.address;
+        const alias = args.alias || "";
         if (!address || !address.startsWith('0x')) {
           toolResult = "❌ Địa chỉ ví không hợp lệ!";
         } else {
           let currentList = [...FAST_TRANSFER_WALLETS];
-          if (!currentList.includes(address)) {
-            currentList.push(address);
+          const exists = currentList.some(w => w.address.toLowerCase() === address.toLowerCase());
+          if (!exists) {
+            currentList.push({ alias, address });
             await window.electronAPI.updateSettings({ fastTransferWallets: currentList });
-            toolResult = `✅ Đã thêm ${address} vào danh sách chuyển nhanh! Bạn có thể xem trong Settings.`;
+            toolResult = `✅ Đã thêm ${alias ? alias + ' (' + address + ')' : address} vào danh sách chuyển nhanh! Bạn có thể xem trong Settings.`;
           } else {
             toolResult = `ℹ️ Địa chỉ ${address} đã có sẵn trong danh sách!`;
           }
         }
       } else if (fnName === "remove_fast_transfer_wallet") {
         const address = args.address;
-        if (!address) {
-          toolResult = "❌ Thiếu địa chỉ ví cần xoá!";
+        const alias = args.alias;
+        if (!address && !alias) {
+          toolResult = "❌ Thiếu thông tin địa chỉ ví hoặc alias cần xoá!";
         } else {
           let currentList = [...FAST_TRANSFER_WALLETS];
-          if (currentList.includes(address)) {
-            currentList = currentList.filter(a => a !== address);
-            await window.electronAPI.updateSettings({ fastTransferWallets: currentList });
-            toolResult = `✅ Đã xoá ${address} khỏi danh sách chuyển nhanh!`;
+          let filteredList = currentList;
+          if (address) {
+            filteredList = currentList.filter(w => w.address.toLowerCase() !== address.toLowerCase());
+          } else if (alias) {
+            filteredList = currentList.filter(w => w.alias.toLowerCase() !== alias.toLowerCase());
+          }
+          
+          if (filteredList.length < currentList.length) {
+            await window.electronAPI.updateSettings({ fastTransferWallets: filteredList });
+            toolResult = `✅ Đã xoá ${alias || address} khỏi danh sách chuyển nhanh!`;
           } else {
-            toolResult = `ℹ️ Địa chỉ ${address} không có trong danh sách!`;
+            toolResult = `ℹ️ Không tìm thấy ${alias || address} trong danh sách!`;
           }
         }
       } else if (fnName === "bonk_pet") {

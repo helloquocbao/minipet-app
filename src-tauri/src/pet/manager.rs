@@ -56,10 +56,41 @@ pub struct UserSettings {
     pub agent_secret_key: String,
     #[serde(rename = "agentAddress", default)]
     pub agent_address: String,
-    #[serde(rename = "fastTransferWallets", default)]
-    pub fast_transfer_wallets: Vec<String>,
+    #[serde(rename = "fastTransferWallets", default, deserialize_with = "deserialize_fast_transfer_wallets")]
+    pub fast_transfer_wallets: Vec<WhitelistWallet>,
     #[serde(default = "default_happiness")]
     pub happiness: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WhitelistWallet {
+    pub alias: String,
+    pub address: String,
+}
+
+fn deserialize_fast_transfer_wallets<'de, D>(deserializer: D) -> Result<Vec<WhitelistWallet>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RawWallet {
+        String(String),
+        Struct(WhitelistWallet),
+    }
+
+    let raw_list: Vec<RawWallet> = Vec::deserialize(deserializer)?;
+    let clean_list = raw_list
+        .into_iter()
+        .map(|item| match item {
+            RawWallet::String(address) => WhitelistWallet {
+                alias: "".to_string(),
+                address,
+            },
+            RawWallet::Struct(w) => w,
+        })
+        .collect();
+    Ok(clean_list)
 }
 
 fn default_happiness() -> u64 {

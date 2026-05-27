@@ -235,7 +235,12 @@
                   <ul id="fast-transfer-list" class="whitelist-container" style="list-style: none; padding: 0; margin: 0 0 8px 0; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
                     <!-- Populated by JS -->
                   </ul>
-                  <p class="setting-hint" style="margin: 0; text-align: center;">💬 Talk to your pet to add or remove addresses from this list.</p>
+                  <div class="whitelist-form" style="display: flex; gap: 8px; margin-top: 4px; width: 100%;">
+                    <input type="text" id="whitelist-alias-input" class="text-input" placeholder="Alias (e.g. Lan)" style="flex: 1; padding: 6px 12px; font-size: 12px;" />
+                    <input type="text" id="whitelist-address-input" class="text-input" placeholder="Sui Address (0x...)" style="flex: 2; padding: 6px 12px; font-size: 12px;" />
+                    <button id="add-whitelist-btn" class="primary-btn" style="white-space: nowrap; padding: 6px 12px; font-size: 12px;">Add</button>
+                  </div>
+                  <p class="setting-hint" style="margin: 6px 0 0 0; text-align: center;">💬 Or talk to your pet to add/remove aliases.</p>
                 </div>
               </div>
             </div>

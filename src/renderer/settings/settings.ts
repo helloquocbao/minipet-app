@@ -533,6 +533,41 @@ function setupGlobalEventListeners() {
   });
 
   document.getElementById('ping-pet-btn')?.addEventListener('click', () => api.pingPet());
+
+  const addWhitelistBtn = document.getElementById('add-whitelist-btn');
+  const whitelistAliasInput = document.getElementById('whitelist-alias-input') as HTMLInputElement;
+  const whitelistAddressInput = document.getElementById('whitelist-address-input') as HTMLInputElement;
+
+  addWhitelistBtn?.addEventListener('click', async () => {
+    const alias = whitelistAliasInput.value.trim();
+    const address = whitelistAddressInput.value.trim();
+
+    if (!alias) {
+      showToast('Alias is required!');
+      return;
+    }
+    if (!address || !address.startsWith('0x') || address.length < 64) {
+      showToast('Invalid Sui Address!');
+      return;
+    }
+
+    const wallets = currentSettings.fastTransferWallets || [];
+    if (wallets.some((w: any) => w.address.toLowerCase() === address.toLowerCase())) {
+      showToast('Address is already in whitelist!');
+      return;
+    }
+
+    const newList = [...wallets, { alias, address }];
+    
+    await api.updateSettings({ fastTransferWallets: newList });
+    currentSettings.fastTransferWallets = newList;
+    
+    whitelistAliasInput.value = '';
+    whitelistAddressInput.value = '';
+
+    renderFastTransferList(currentSettings);
+    showToast('Added to whitelist! 🎉');
+  });
 }
 
 function populateForm(settings: UserSettings): void {
@@ -613,7 +648,7 @@ function renderFastTransferList(settings: any) {
   const container = document.getElementById('fast-transfer-list');
   if (!container) return;
   
-  const wallets: string[] = settings.fastTransferWallets || [];
+  const wallets: { alias: string; address: string }[] = settings.fastTransferWallets || [];
   
   if (wallets.length === 0) {
     container.innerHTML = `
@@ -624,11 +659,36 @@ function renderFastTransferList(settings: any) {
     return;
   }
   
-  container.innerHTML = wallets.map(wallet => `
-    <li style="padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #a78bfa; word-break: break-all;">
-      ${wallet}
+  container.innerHTML = wallets.map((wallet, index) => `
+    <li class="whitelist-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; gap: 8px;">
+      <span class="whitelist-alias" style="color: #a78bfa; font-weight: 600; flex: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        ${wallet.alias || 'Unnamed'}
+      </span>
+      <span class="whitelist-address" style="color: rgba(255, 255, 255, 0.6); font-family: 'JetBrains Mono', monospace; flex: 2.5; font-size: 11px; word-break: break-all;">
+        ${wallet.address}
+      </span>
+      <button class="remove-whitelist-btn" data-index="${index}" style="background: none; border: none; color: #ff4757; cursor: pointer; padding: 4px; transition: all 0.2s; font-size: 14px;">
+        🗑️
+      </button>
     </li>
   `).join('');
+
+  // Add click listener for all remove buttons
+  container.querySelectorAll('.remove-whitelist-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const idxStr = (e.currentTarget as HTMLElement).getAttribute('data-index');
+      if (idxStr === null) return;
+      const idx = parseInt(idxStr);
+      
+      const newList = [...wallets];
+      newList.splice(idx, 1);
+      
+      const api = (window as any).electronAPI;
+      await api.updateSettings({ fastTransferWallets: newList });
+      currentSettings.fastTransferWallets = newList;
+      renderFastTransferList(currentSettings);
+    });
+  });
 }
 
 function updateSuiStatusUI(enabled: boolean) {

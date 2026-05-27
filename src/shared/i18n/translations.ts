@@ -306,7 +306,8 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (Coming on Mainnet)',
     aiModelLabel: 'Active AI Model (Local AI)',
     aiModelHint: 'Connecting via C++ core at localhost:8080. 100% Offline & privacy-first.',
-    agentWalletHint: 'Fund this wallet with SUI to allow your Pet to execute transactions for you.'
+    agentWalletHint: 'Fund this wallet with SUI to allow your Pet to execute transactions for you.',
+    fastTransferWhitelist: 'Fast Transfer Whitelist'
   },
   vi: {
     settingsTitle: 'Cài đặt MiniPet',
@@ -631,7 +632,8 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (Chờ lên Mainnet)',
     aiModelLabel: 'Mô hình đang chạy (Local AI)',
     aiModelHint: 'Đang kết nối qua lõi C++ localhost:8080. Đảm bảo 100% Offline & Bảo mật tuyệt đối dữ liệu cá nhân.',
-    agentWalletHint: 'Nạp thêm SUI vào ví này để cho phép Pet thay mặt bạn thực hiện các giao dịch.'
+    agentWalletHint: 'Nạp thêm SUI vào ví này để cho phép Pet thay mặt bạn thực hiện các giao dịch.',
+    fastTransferWhitelist: 'Danh sách chuyển nhanh'
   },
   fr: {
     settingsTitle: 'Paramètres MiniPet',
@@ -754,7 +756,8 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (Bientôt sur le Mainnet)',
     aiModelLabel: 'Modèle IA actif (IA locale)',
     aiModelHint: 'Connexion via le noyau C++ sur localhost:8080. 100% hors ligne et respect de la vie privée.',
-    agentWalletHint: 'Alimentez ce portefeuille en SUI pour permettre à votre animal d\'effectuer des transactions pour vous.'
+    agentWalletHint: 'Alimentez ce portefeuille en SUI pour permettre à votre animal d\'effectuer des transactions pour vous.',
+    fastTransferWhitelist: 'Liste de transfert rapide'
   },
   zh: {
     settingsTitle: 'MiniPet 设置',
@@ -874,7 +877,8 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (等待上主网)',
     aiModelLabel: '运行中的模型 (本地 AI)',
     aiModelHint: '通过 localhost:8080 的 C++ 内核连接。确保 100% 离线和绝对个人数据隐私。',
-    agentWalletHint: '向此钱包存入 SUI，以允许您的宠物为您执行交易。'
+    agentWalletHint: '向此钱包存入 SUI，以允许您的宠物为您执行交易。',
+    fastTransferWhitelist: '快速转账白名单'
   },
   it: {
     settingsTitle: 'Impostazioni MiniPet',
@@ -994,7 +998,8 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (In arrivo su Mainnet)',
     aiModelLabel: 'Modello AI attivo (AI locale)',
     aiModelHint: 'Connessione tramite core C++ a localhost:8080. 100% offline e priorità alla privacy.',
-    agentWalletHint: 'Ricarica questo portafoglio con SUI per consentire al tuo animale di eseguire transazioni per te.'
+    agentWalletHint: 'Ricarica questo portafoglio con SUI per consentire al tuo animale di eseguire transazioni per te.',
+    fastTransferWhitelist: 'Lista trasferimento rapido'
   },
   ko: {
     settingsTitle: 'MiniPet 설정',
@@ -1115,6 +1120,7 @@ export const translations: Record<Language, any> = {
     modelQwen7B: 'Qwen 2.5 7B (메인넷 대기 중)',
     aiModelLabel: '실행 중인 모델 (로컬 AI)',
     aiModelHint: 'localhost:8080의 C++ 코어를 통해 연결됩니다. 100% 오프라인 및 완벽한 개인정보 보호 보장.',
-    agentWalletHint: '이 지갑에 SUI를 충전하여 펫이 귀하를 대신해 거래를 수행할 수 있도록 하세요.'
+    agentWalletHint: '이 지갑에 SUI를 충전하여 펫이 귀하를 대신해 거래를 수행할 수 있도록 하세요.',
+    fastTransferWhitelist: '빠른 이체 화이트리스트'
   }
 };
