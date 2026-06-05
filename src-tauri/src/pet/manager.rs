@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use super::loader::{self, LoadedPet};
 
-const MAX_ACTIVE_PETS: usize = 1;
 // Safe spawn position — center-ish of a typical 1920x1080 screen
 const DEFAULT_X: f64 = 1400.0;
 const DEFAULT_Y: f64 = 700.0;
@@ -16,6 +15,17 @@ pub struct PetInstance {
     pub x: f64,
     pub y: f64,
     pub scale: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ZkLoginSession {
+    pub jwt: String,
+    #[serde(rename = "ephemeralPrivateKey")]
+    pub ephemeral_private_key: String,
+    pub randomness: String,
+    #[serde(rename = "maxEpoch")]
+    pub max_epoch: String,
+    pub salt: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,6 +66,10 @@ pub struct UserSettings {
     pub agent_secret_key: String,
     #[serde(rename = "agentAddress", default)]
     pub agent_address: String,
+    #[serde(rename = "walletMode", default = "default_wallet_mode")]
+    pub wallet_mode: String,
+    #[serde(rename = "zkLoginSession")]
+    pub zklogin_session: Option<ZkLoginSession>,
     #[serde(rename = "fastTransferWallets", default, deserialize_with = "deserialize_fast_transfer_wallets")]
     pub fast_transfer_wallets: Vec<WhitelistWallet>,
     #[serde(default = "default_happiness")]
@@ -97,6 +111,10 @@ fn default_happiness() -> u64 {
     100
 }
 
+fn default_wallet_mode() -> String {
+    "agent".to_string()
+}
+
 fn default_position() -> String {
     "bottom-right".to_string()
 }
@@ -136,6 +154,8 @@ impl Default for UserSettings {
             agent_address: "".to_string(),
             fast_transfer_wallets: vec![],
             happiness: 100,
+            wallet_mode: "agent".to_string(),
+            zklogin_session: None,
         }
     }
 }
@@ -211,11 +231,12 @@ impl PetManager {
 
         // Sanitize saved positions — reset if outside visible screen area
         for inst in &mut self.settings.active_pets {
-            let max_x = 1600.0; // reasonable max for most screens
-            let max_y = 800.0;  // leave room for taskbar
+            // Use actual screen dimensions from default_x/default_y hints
+            let max_x = (self.default_x * 2.0 + 320.0).min(3840.0); // Support up to 4K
+            let max_y = (self.default_y * 2.0 + 320.0).min(2160.0);
             if inst.x < 0.0 || inst.x > max_x || inst.y < 0.0 || inst.y > max_y {
-                inst.x = self.default_x + rand::random::<f64>() * 200.0;
-                inst.y = self.default_y + rand::random::<f64>() * 100.0;
+                inst.x = self.default_x;
+                inst.y = self.default_y;
             }
         }
 
@@ -659,6 +680,9 @@ impl PetManager {
             })
             .to_string();
 
+        // Prevent path traversal in slug
+        slug = slug.replace("/", "").replace("\\", "").replace("..", "");
+
         // Ensure uniqueness - check both memory and filesystem
         let original_slug = slug.clone();
         let mut counter = 1;
@@ -679,45 +703,6 @@ impl PetManager {
         Ok(self.get_installed_pets())
     }
 
-    pub async fn delete_pet(&mut self, slug: &str) -> Result<Vec<PetListItem>, String> {
-        if self.default_pet_slugs.contains(&slug.to_string()) {
-            return Err("Cannot delete default pet".to_string());
-        }
-
-        let target = self.pets_dir.join(slug);
-        tokio::fs::remove_dir_all(&target)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        self.settings.active_pets.retain(|p| p.slug != slug);
-        if self.settings.active_pet_slug.as_deref() == Some(slug) {
-            self.settings.active_pet_slug = self.pets.first().and_then(|p| p.manifest.slug.clone());
-        }
-
-        // Ensure at least one pet active
-        if self.settings.active_pets.is_empty() {
-            let remaining: Vec<_> = self
-                .pets
-                .iter()
-                .filter(|p| p.manifest.slug.as_deref() != Some(slug))
-                .collect();
-            if let Some(p) = remaining.first() {
-                let s = p.manifest.slug.clone().unwrap_or_default();
-                self.settings.active_pets.push(PetInstance {
-                    id: Uuid::new_v4().to_string(),
-                    slug: s.clone(),
-                    x: self.default_x + rand::random::<f64>() * 200.0,
-                    y: self.default_y + rand::random::<f64>() * 200.0,
-                    scale: self.settings.scale,
-                });
-                self.settings.active_pet_slug = Some(s);
-            }
-        }
-
-        self.save_settings().await;
-        self.pets = loader::scan_directory(&self.pets_dir).await;
-        Ok(self.get_installed_pets())
-    }
 
     pub async fn eat_files(&self, paths: Vec<String>) -> Result<(), String> {
         for p in paths {
@@ -766,15 +751,8 @@ impl PetManager {
 
     pub async fn load_settings(&mut self) {
         if let Ok(data) = tokio::fs::read_to_string(&self.settings_path).await {
-            if let Ok(mut parsed) = serde_json::from_str::<UserSettings>(&data) {
-                if !parsed.sui_enabled || !parsed.ai_enabled {
-                    parsed.sui_enabled = true;
-                    parsed.ai_enabled = true;
-                    self.settings = parsed;
-                    self.save_settings().await;
-                } else {
-                    self.settings = parsed;
-                }
+            if let Ok(parsed) = serde_json::from_str::<UserSettings>(&data) {
+                self.settings = parsed;
                 return;
             }
         }

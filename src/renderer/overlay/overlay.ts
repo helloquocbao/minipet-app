@@ -4,8 +4,7 @@ import { PetStateMachine } from './engine/pet-state-machine';
 import { PETDEX_SPRITE, INTERACTION } from '../../shared/constants';
 import { translations, Language } from '../../shared/i18n/translations';
 import { SuiMonitor } from '../blockchain/monitor';
-import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { getAllWebviewWindows, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { SecurityAgent } from '../blockchain/agent';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
@@ -52,8 +51,11 @@ async function getOrCreateSpeechWindow() {
       shadow: false,
     });
   }
-  speechWindowRef = win;
-  return win;
+  // Only set if not already set by a concurrent call
+  if (!speechWindowRef) {
+    speechWindowRef = win;
+  }
+  return speechWindowRef;
 }
 
 async function syncSpeechWindowPosition() {
@@ -76,7 +78,7 @@ async function syncSpeechWindowPosition() {
 function isChosenToSpeak(seedStr: string): boolean {
   if (!currentActivePets || currentActivePets.length === 0) return true;
   const sortedIds = currentActivePets.map(p => p.id).sort();
-  const myIndex = sortedIds.indexOf(instanceId!);
+  const myIndex = sortedIds.indexOf(instanceId ?? '');
   if (myIndex === -1) return true;
 
   let hash = 0;
@@ -104,7 +106,6 @@ function pickUniqueRandom(opt: string | string[]): string {
 }
 
 async function handleDeepLinkUrl(url: string) {
-  console.log('[Overlay] handleDeepLinkUrl:', url);
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'minipet:' && parsed.host === 'sync') {
@@ -115,12 +116,9 @@ async function handleDeepLinkUrl(url: string) {
           // Kiểm tra xem ví hiện tại đã trùng khớp và đang bật chưa. Nếu trùng rồi thì bỏ qua để chống vòng lặp reload.
           const settings = await api.getSettings();
           if (settings && settings.suiAddress === address && settings.suiEnabled) {
-            console.log('[Overlay] Sui address already configured and enabled, skipping deep link sync');
             return;
           }
 
-          console.log('[Overlay] Syncing Sui address from deep link:', address);
-          
           // Cập nhật cài đặt ngay lập tức, bỏ confirm dialog trên cửa sổ trong suốt để tránh treo/bị chặn
           await api.updateSettings({ suiAddress: address, suiEnabled: true });
           
@@ -149,15 +147,15 @@ async function init(): Promise<void> {
 
   // Initialize Deep Link Listener
   try {
-    getCurrent().then((urls) => {
+    void getCurrent().then((urls) => {
       if (urls && urls.length > 0) {
-        handleDeepLinkUrl(urls[0]);
+        void handleDeepLinkUrl(urls[0]);
       }
     }).catch(console.error);
 
-    onOpenUrl((urls) => {
+    void onOpenUrl((urls) => {
       if (urls && urls.length > 0) {
-        handleDeepLinkUrl(urls[0]);
+        void handleDeepLinkUrl(urls[0]);
       }
     }).catch(console.error);
 
@@ -165,8 +163,7 @@ async function init(): Promise<void> {
     const api = (window as any).electronAPI;
     if (api && api.onCustomEvent) {
       api.onCustomEvent('single-instance://deep-link', (url: string) => {
-        console.log('[Overlay] Deep link received from single-instance event:', url);
-        handleDeepLinkUrl(url);
+        void handleDeepLinkUrl(url);
       });
     }
 
@@ -174,7 +171,6 @@ async function init(): Promise<void> {
     if (api && api.onCustomEvent) {
       api.onCustomEvent('wallet:suggest-sync', (data: any) => {
         if (data && data.address) {
-          console.log('[Overlay] Suggest sync address received:', data.address);
           pendingWalletSyncAddress = data.address;
           isSuggestingWalletSync = true;
           // Tự động clear sau 20 giây nếu người dùng không click Pet
@@ -193,7 +189,6 @@ async function init(): Promise<void> {
 
   const params = new URLSearchParams(window.location.search);
   instanceId = params.get('id');
-  console.log('[Overlay] init, instanceId:', instanceId, 'href:', window.location.href);
 
   if (!instanceId) {
     console.error('[Overlay] No instanceId provided.');
@@ -207,7 +202,6 @@ async function init(): Promise<void> {
   try {
     petData = await window.electronAPI.getInstanceConfig(instanceId);
     activePetConfig = petData;
-    console.log('[Overlay] petData:', JSON.stringify(petData));
   } catch (e) {
     console.error('[Overlay] getInstanceConfig failed:', e);
     return;
@@ -227,9 +221,14 @@ async function init(): Promise<void> {
   // 3. Load the pet spritesheet
   if (petData?.spritesheetPath) {
     try {
-      console.log('[Overlay] Loading spritesheet:', petData.spritesheetPath);
-      await renderer.loadSpritesheet(petData.spritesheetPath);
-      console.log('[Overlay] Spritesheet loaded OK');
+      let finalPath = petData.spritesheetPath;
+      // Only add cache buster for local files, not remote URLs
+      // (cache busting remote URLs forces re-download and causes blank frames during load)
+      if (!finalPath.startsWith('asset://') && !finalPath.startsWith('data:') && !finalPath.startsWith('http')) {
+        const cacheBuster = `?t=${Date.now()}`;
+        finalPath += cacheBuster;
+      }
+      await renderer.loadSpritesheet(finalPath);
     } catch (err) {
       console.error('[Overlay] Failed to load spritesheet:', err);
     }
@@ -242,7 +241,7 @@ async function init(): Promise<void> {
   const isWalkingEnabled = savedSettings?.enableWalking !== false;
   currentLanguage = savedSettings?.language || 'en';
 
-  controller = new AnimationController(renderer, instanceId!);
+  controller = new AnimationController(renderer, instanceId ?? '');
   stateMachine = new PetStateMachine(controller, initialScale, isWalkingEnabled);
   if (petData?.animations) {
     stateMachine.updateAnimations(petData.animations);
@@ -257,7 +256,7 @@ async function init(): Promise<void> {
   window.electronAPI.focus();
 
   // Sync window dimensions with pet scale
-  syncWindowSize();
+  void syncWindowSize();
 
   // --- Multi-Pet: Chasing Logic ---
   window.electronAPI.onPositionsUpdate((data: any) => {
@@ -301,7 +300,7 @@ async function init(): Promise<void> {
   });
 
   (window.electronAPI as any).onPomoFinished((sessionType: string) => {
-    if (!isChosenToSpeak('pomo_' + sessionType)) return;
+    if (!isChosenToSpeak(`pomo_${sessionType}`)) return;
     const t = translations[currentLanguage];
     const randomBuffer = new Uint32Array(1);
     window.crypto.getRandomValues(randomBuffer);
@@ -318,11 +317,10 @@ async function init(): Promise<void> {
   setupContextMonitoring();
 
   // --- Settings Update Handling ---
-  window.electronAPI.onSettingsUpdate(async (data: any) => {
+  window.electronAPI.onSettingsUpdate((data: any) => { void (async () => {
     const { settings } = data;
     currentActivePets = settings.activePets || [];
     currentLanguage = settings.language || 'en';
-    console.log('[Overlay] Settings updated, language:', currentLanguage);
 
     // Find this instance's specific configuration
     const myInstance = settings.activePets.find((p: any) => p.id === instanceId);
@@ -331,9 +329,16 @@ async function init(): Promise<void> {
       stateMachine.setScale(currentScale);
       stateMachine.setWalkingEnabled(settings.enableWalking);
       controller.setWalkingEnabled(settings.enableWalking);
-      syncWindowSize();
+      void syncWindowSize();
+    } else if (settings.activePets.length > 0) {
+      // This window's instanceId is no longer in activePets — a new pet was spawned.
+      // Navigate to the new instance's URL so the overlay re-inits with the new pet.
+      const newInstance = settings.activePets[0];
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('id', newInstance.id);
+      window.location.href = newUrl.toString();
     }
-  });
+  })(); });
 
   // --- Intelligence & Sync ---
   window.electronAPI.onPetSay((payload: string | { text: string; priority?: boolean }) => {
@@ -386,40 +391,34 @@ async function init(): Promise<void> {
   setupMouseInteraction(canvas, stateMachine);
 
   // --- Master Election for Blockchain Monitor ---
-  setupMasterElection();
+  void setupMasterElection();
 
   // --- Blockchain Events ---
   window.electronAPI.onBlockchainEvent((event: any) => {
     if (!isChosenToSpeak(JSON.stringify(event))) return;
-    console.log('[Overlay] Blockchain event received:', event);
-    console.log('[Overlay] Current Language:', currentLanguage);
 
     const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
     const t = translations[lang];
-    console.log('[Overlay] Using translation keys:', Object.keys(t).slice(0, 5), '...');
-    console.log('[Overlay] Event type:', event.event_type);
     const amountStr = (event.amount / 1000000000).toFixed(3);
 
     if (event.event_type === 'message') {
-      stateMachine.forceState('happy');
+      stateMachine.forceState('greet');
       let msg = t.blockchainMessage || '{pet}: {message} (+{amount} {coin})';
       msg = msg.replace('{pet}', event.pet_slug || 'Someone')
         .replace('{message}', event.message || '')
         .replace('{amount}', amountStr)
         .replace('{coin}', event.coin_type || 'SUI');
-      console.log('[Overlay] Showing blockchain message:', msg);
       showSpeech(msg, 7000, true, 'Blockchain:Message');
     } else if (event.event_type === 'bonk') {
-      stateMachine.forceState('jump');
+      stateMachine.forceState('bonk');
       let msg = t.blockchainBonk || '{pet} bonked me! (-{amount} {coin})';
       msg = msg.replace('{pet}', event.pet_slug || 'Someone')
         .replace('{amount}', amountStr)
         .replace('{coin}', event.coin_type || 'SUI');
-      console.log('[Overlay] Showing blockchain bonk:', msg);
       showSpeech(msg, 5000, true, 'Blockchain:Bonk');
     } else if (event.event_type === 'receive_coin') {
       // If we just showed a message or bonk in this SAME tick, receive_coin should win
-      stateMachine.forceState('happy');
+      stateMachine.forceState('greet');
 
       const variations = t.blockchainReceiveCoin || [
         `Wow! Just received {amount} {coin}! 🚀`
@@ -429,10 +428,9 @@ async function init(): Promise<void> {
       randomMsg = randomMsg.replace('{amount}', amountStr)
         .replace('{coin}', event.coin_type || 'SUI');
 
-      console.log('[Overlay] Showing blockchain receive:', randomMsg);
       showSpeech(randomMsg, 8000, true, 'Blockchain:Receive');
     } else if (event.event_type === 'send_coin') {
-      stateMachine.forceState('jump'); // Maybe a bit surprised/active
+      stateMachine.forceState('sad'); // Gửi tiền đi = buồn nhẹ
 
       const variations = t.blockchainSendCoin || [
         `Sent {amount} {coin}. 👋`
@@ -442,7 +440,6 @@ async function init(): Promise<void> {
       randomMsg = randomMsg.replace('{amount}', amountStr)
         .replace('{coin}', event.coin_type || 'SUI');
 
-      console.log('[Overlay] Showing blockchain send:', randomMsg);
       showSpeech(randomMsg, 6000, true, 'Blockchain:Send');
     }
   });
@@ -450,7 +447,7 @@ async function init(): Promise<void> {
   // --- Real-time Speech Sync (Event Driven) ---
   window.electronAPI.onWindowMoved((_x: number, _y: number) => {
     if (isSpeechVisible && currentSpeechText) {
-      syncSpeechWindowPosition();
+      void syncSpeechWindowPosition();
     }
   });
 
@@ -464,9 +461,9 @@ async function init(): Promise<void> {
   (window.electronAPI as any).onCustomEvent(`user-chat-submit-${instanceId}`, (payload: any) => {
     if (payload && payload.text) {
       if (pendingTransfer) {
-        handlePendingTransferClarification(payload.text);
+        void handlePendingTransferClarification(payload.text);
       } else {
-        handleLocalChat(payload.text);
+        void handleLocalChat(payload.text);
       }
     }
   });
@@ -478,65 +475,71 @@ async function init(): Promise<void> {
   });
 
   // --- Local AI Bootup Logic ---
-  const { invoke } = await import('@tauri-apps/api/core');
-  const { listen } = await import('@tauri-apps/api/event');
-  
-  try {
-    const hasModel = await invoke('check_model_exists');
-    if (!hasModel) {
-      const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-      const t = translations[lang];
-      
-      let initialMsg = t.modelDownloading || "Downloading brain...";
-      initialMsg = initialMsg
-        .replace('{percent}', '0.0')
-        .replace('{downloaded}', '0.0')
-        .replace('{total}', '1000');
-      showSpeech(initialMsg, 999999, true, 'System');
-      
-      let lastPercentInt = -1;
-      const unlisten = await listen('model-download-progress', (event: any) => {
-        const payload = event.payload as any;
-        const percentNum = payload.progress;
-        const percentInt = Math.floor(percentNum);
-        
-        if (percentInt !== lastPercentInt) {
-          lastPercentInt = percentInt;
-          const percentStr = percentNum.toFixed(1);
-          const downloadedMB = (payload.downloaded / 1048576).toFixed(1);
-          const totalMB = (payload.total / 1048576).toFixed(1);
-          
-          const currentLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-          const currentT = translations[currentLang];
-          
-          let progressMsg = currentT.modelDownloading || "Downloading brain...";
-          progressMsg = progressMsg
-            .replace('{percent}', percentStr)
-            .replace('{downloaded}', downloadedMB)
-            .replace('{total}', totalMB);
-            
-          showSpeech(progressMsg, 999999, true, 'System');
-        }
-      });
-      
-      await invoke('download_model');
-      unlisten();
-      
-      const postLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-      const postT = translations[postLang];
-      showSpeech(postT.modelDownloadComplete || "Tải xong rồi! Đang khởi động não...", 4000, true, 'System');
+  // Only start AI if the user has enabled it AND has a connected wallet
+  // (AI agent requires on-chain features which need a wallet)
+  const aiEnabled = savedSettings?.aiEnabled !== false;
+  const walletConnected = !!(savedSettings?.suiAddress && savedSettings?.suiEnabled);
+
+  if (aiEnabled && walletConnected) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { listen } = await import('@tauri-apps/api/event');
+
+    try {
+      const hasModel = await invoke('check_model_exists');
+      if (!hasModel) {
+        const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+        const t = translations[lang];
+
+        let initialMsg = t.modelDownloading || "Downloading brain...";
+        initialMsg = initialMsg
+          .replace('{percent}', '0.0')
+          .replace('{downloaded}', '0.0')
+          .replace('{total}', '1000');
+        showSpeech(initialMsg, 999999, true, 'System');
+
+        let lastPercentInt = -1;
+        const unlisten = await listen('model-download-progress', (event: any) => {
+          const payload = event.payload as any;
+          const percentNum = payload.progress;
+          const percentInt = Math.floor(percentNum);
+
+          if (percentInt !== lastPercentInt) {
+            lastPercentInt = percentInt;
+            const percentStr = percentNum.toFixed(1);
+            const downloadedMB = (payload.downloaded / 1048576).toFixed(1);
+            const totalMB = (payload.total / 1048576).toFixed(1);
+
+            const currentLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+            const currentT = translations[currentLang];
+
+            let progressMsg = currentT.modelDownloading || "Downloading brain...";
+            progressMsg = progressMsg
+              .replace('{percent}', percentStr)
+              .replace('{downloaded}', downloadedMB)
+              .replace('{total}', totalMB);
+
+            showSpeech(progressMsg, 999999, true, 'System');
+          }
+        });
+
+        await invoke('download_model');
+        unlisten();
+
+        const postLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+        const postT = translations[postLang];
+        showSpeech(postT.modelDownloadComplete || "Tải xong rồi! Đang khởi động não...", 4000, true, 'System');
+      }
+
+      await invoke('start_ai_server');
+    } catch (err) {
+      console.error("[Local AI] Boot failed:", err);
     }
-    
-    await invoke('start_ai_server');
-    console.log("[Local AI] Server started on port 8080");
-  } catch (err) {
-    console.error("[Local AI] Boot failed:", err);
   }
 
   // Greeting on startup
   setTimeout(() => {
     const t = translations[currentLanguage];
-    stateMachine.forceState('happy');
+    stateMachine.forceState('greet');
     showSpeech(pickUniqueRandom(t.hello), 4000, true, 'Startup');
   }, 1000);
 }
@@ -556,22 +559,18 @@ async function setupMasterElection() {
 
       if (myLabel === sortedLabels[0]) {
         if (!suiMonitor) {
-          console.log(`[Overlay] ${myLabel} elected as Master. Starting SuiMonitor.`);
           suiMonitor = new SuiMonitor();
         }
         if (!securityAgent) {
-          console.log(`[Overlay] ${myLabel} elected as Master. Starting SecurityAgent.`);
           securityAgent = new SecurityAgent();
-          securityAgent.start();
+          void securityAgent.start();
         }
       } else {
         if (suiMonitor) {
-          console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SuiMonitor.`);
           (suiMonitor as any).stopPolling?.();
           suiMonitor = null;
         }
         if (securityAgent) {
-          console.log(`[Overlay] ${myLabel} is no longer Master. Stopping SecurityAgent.`);
           securityAgent.stop();
           securityAgent = null;
         }
@@ -585,7 +584,7 @@ async function setupMasterElection() {
   await checkMaster();
 
   // Re-elect every 10 seconds in case windows are closed/opened
-  setInterval(checkMaster, 10000);
+  setInterval(() => { void checkMaster(); }, 10000);
 }
 
 /**
@@ -611,7 +610,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
       startY = e.screenY;
 
       // 2. UI state
-      stateMachine.forceState('drag');
+      stateMachine.forceState('dazed');
       window.electronAPI.setIgnoreMouseEvents(false);
     }
   });
@@ -666,7 +665,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
       
       const api = (window as any).electronAPI;
       if (api) {
-        api.updateSettings({ suiAddress: addr, suiEnabled: true }).then(() => {
+        void api.updateSettings({ suiAddress: addr, suiEnabled: true }).then(() => {
           showSpeech("Yeah! Đã đồng bộ ví Sui của sen thành công rồi nha! Đang tải lại... 🎉", 5000, true, 'System');
           setTimeout(() => window.location.reload(), 2000);
         }).catch((err: any) => {
@@ -686,7 +685,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
       if (isChatActive) {
         toggleChatMode(false);
       } else {
-        stateMachine.forceState('happy');
+        stateMachine.forceState('greet');
         showSpeech(pickUniqueRandom(t.hello));
       }
     } else if (clickCount === 2) {
@@ -697,7 +696,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
         stateMachine.forceState('run');
         showSpeech(pickUniqueRandom(t.run));
       } else {
-        stateMachine.forceState('happy');
+        stateMachine.forceState('greet');
         showSpeech(t.movingDisabled);
       }
     }
@@ -720,9 +719,9 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
   /**
    * Drag-and-drop file eating handlers using native Tauri events.
    */
-  window.electronAPI.onDragDrop(async (type: string, paths: string[]) => {
+  window.electronAPI.onDragDrop((type: string, paths: string[]) => { void (async () => {
     if (type === 'enter') {
-      stateMachine.forceState('jump');
+      stateMachine.forceState('dazed');
     } else if (type === 'leave') {
       stateMachine.transitionTo('idle');
     } else if (type === 'drop') {
@@ -749,7 +748,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
         }, 1000);
       }
     }
-  });
+  })(); });
 }
 
 /**
@@ -763,7 +762,7 @@ async function updateSpeechOverlay(text: string, visible: boolean) {
       await syncSpeechWindowPosition();
     }
     // Gửi event sang speech window
-    window.electronAPI.broadcastPetEvent(`update-speech-${instanceId}`, { text, visible });
+    void window.electronAPI.broadcastPetEvent(`update-speech-${instanceId}`, { text, visible });
     
     if (!visible) {
       setTimeout(() => win.hide(), 350);
@@ -789,29 +788,26 @@ async function syncWindowSize(): Promise<void> {
   const winHeight = petHeight;
 
   try {
-    await window.electronAPI.resizeKeepBottom(winWidth, winHeight);
+    window.electronAPI.resizeKeepBottom(winWidth, winHeight);
   } catch (err) {
     console.error('Failed to resize window:', err);
   }
   
   if (isSpeechVisible) {
-    syncSpeechWindowPosition();
+    void syncSpeechWindowPosition();
   }
 }
 
 /**
  * Displays a speech bubble with the given text for a specific duration.
  */
-function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT, priority: boolean = false, source: string = 'unknown'): void {
-  console.log(`[Overlay] showSpeech from ${source}: "${text}" (priority: ${priority})`);
+function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION_DEFAULT, priority: boolean = false, _source: string = 'unknown'): void {
   if (isChatActive || isAnyChatActive) {
-    console.log('[Overlay] Skipping speech because chat mode is active.');
     return;
   }
   if (speechTimeout) clearTimeout(speechTimeout);
   if (!priority && isSpeechVisible) {
     if ((window as any).isCurrentSpeechPriority) {
-      console.log('[Overlay] Skipping non-priority speech as priority speech is visible.');
       return;
     }
   }
@@ -821,8 +817,8 @@ function showSpeech(text: string, duration: number = INTERACTION.SPEECH_DURATION
   (window as any).isCurrentSpeechPriority = priority;
 
   // Use separate speech window
-  updateSpeechOverlay(text, true);
-  syncWindowSize(); // Phình to cửa sổ ra để chứa chữ
+  void updateSpeechOverlay(text, true);
+  void syncWindowSize(); // Phình to cửa sổ ra để chứa chữ
 
   // Notify other pets to stay silent
   window.electronAPI.notifySpeaking();
@@ -843,7 +839,7 @@ function toggleChatMode(active: boolean) {
       clearTimeout(speechTimeout);
       speechTimeout = null;
     }
-    updateSpeechOverlay(welcomeText, true);
+    void updateSpeechOverlay(welcomeText, true);
   } else {
     closeChatAndHideSpeech();
   }
@@ -859,7 +855,6 @@ function toggleChatMode(active: boolean) {
 function hideSpeech(): void {
   // If chat is active, do NOT reset it — just ignore the timeout
   if (isChatActive) {
-    console.log('[Overlay] hideSpeech called while chat is active, ignoring.');
     if (speechTimeout) {
       clearTimeout(speechTimeout);
       speechTimeout = null;
@@ -870,8 +865,8 @@ function hideSpeech(): void {
   isSpeechVisible = false;
   currentSpeechText = '';
   (window as any).isCurrentSpeechPriority = false;
-  updateSpeechOverlay('', false);
-  syncWindowSize();
+  void updateSpeechOverlay('', false);
+  void syncWindowSize();
 
   if (speechTimeout) {
     clearTimeout(speechTimeout);
@@ -888,8 +883,8 @@ function closeChatAndHideSpeech(): void {
   isSpeechVisible = false;
   currentSpeechText = '';
   (window as any).isCurrentSpeechPriority = false;
-  updateSpeechOverlay('', false);
-  syncWindowSize();
+  void updateSpeechOverlay('', false);
+  void syncWindowSize();
 
   if (speechTimeout) {
     clearTimeout(speechTimeout);
@@ -1080,7 +1075,7 @@ const PHISHING_BLACKLIST = [
 ];
 
 function setupContextMonitoring(): void {
-  setInterval(async () => {
+  setInterval(() => { void (async () => {
     // Only the elected Master window should poll the active app
     if (!suiMonitor) {
       return;
@@ -1112,11 +1107,11 @@ function setupContextMonitoring(): void {
         const isBlacklisted = PHISHING_BLACKLIST.some(keyword => urlLower.includes(keyword) || tabLower.includes(keyword));
         if (isBlacklisted) {
           const displayUrl = browserUrl || browserTab;
-          window.electronAPI.broadcastPetEvent('pet:say', {
+          void window.electronAPI.broadcastPetEvent('pet:say', {
             text: `🚨 CẢNH BÁO NGUY HIỂM! 🚨\nPhát hiện sếp đang truy cập trang web nghi vấn lùa đảo/phishing:\n🌐 ${displayUrl}\nBoss hãy tắt tab ngay để bảo vệ tài sản! 🛡️`,
             priority: true
           });
-          window.electronAPI.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
+          void window.electronAPI.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
           return;
         }
       }
@@ -1148,19 +1143,21 @@ function setupContextMonitoring(): void {
         lastCommentTime = nowTime;
 
         // Broadcast the category key to all pet windows
-        window.electronAPI.broadcastPetEvent('pet:say', { text: category, priority: false });
+        void window.electronAPI.broadcastPetEvent('pet:say', { text: category, priority: false });
       }
     } catch (err) {
       console.error('[ContextMonitor] Error polling active app:', err);
     }
-  }, 5000);
+  })(); }, 5000);
 }
 
 
 
+/** Placeholder for optional level-up transaction append — no-op until contract supports it */
+function maybeAppendLevelUp(_tx: unknown): void { /* reserved */ }
+
 /** Map language code → full language name for AI system prompt */
-const LANG_NAME_MAP: Record<string, string> = {
-  vi: 'Vietnamese',
+const LANG_NAME_MAP: Record<string, string> = {  vi: 'Vietnamese',
   en: 'English',
   fr: 'French',
   zh: 'Chinese (Simplified)',
@@ -1242,14 +1239,14 @@ async function handlePendingTransferClarification(userText: string) {
       const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
       tx.transferObjects([coin], selectedAddress);
       
-      const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+      await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
       const successText = `✅ Đã chuyển ${amount} SUI thành công cho ${recipientAlias}! 🎉`;
       
       localChatHistory.push({ role: "assistant", content: successText });
       (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: successText });
     } catch (e: any) {
       const errMsg = e.message || e.toString();
-      let friendlyMsg = errMsg;
+      let friendlyMsg: string;
       const lowerErr = errMsg.toLowerCase();
       if (lowerErr.includes('insufficient') && (lowerErr.includes('gas') || lowerErr.includes('balance'))) {
         friendlyMsg = `❌ Chuyển tiền thất bại: Số dư ví không đủ SUI để thực hiện giao dịch và trả phí gas!`;
@@ -1294,7 +1291,7 @@ async function handleLocalChat(userText: string) {
       messages: localChatHistory
     };
 
-    let response = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
+    const response = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -1392,7 +1389,7 @@ async function handleLocalChat(userText: string) {
       }
       
       // Fallback: show shortened raw error but still looking clean
-      const short = rawError.length > 120 ? rawError.substring(0, 120) + '...' : rawError;
+      const short = rawError.length > 120 ? `${rawError.substring(0, 120)}...` : rawError;
       return `❌ ${action} thất bại do lỗi blockchain: "${short}"`;
     }
 
@@ -1404,7 +1401,6 @@ async function handleLocalChat(userText: string) {
         try {
           const parsed = JSON.parse(toolCallMatch[1]);
           if (parsed.name) {
-            console.log('[Local AI] Detected <tool_call> in text:', parsed.name);
             let parsedArgs = parsed.arguments;
             if (typeof parsedArgs === 'string') {
               try { parsedArgs = JSON.parse(parsedArgs); } catch { /* keep as-is */ }
@@ -1467,7 +1463,7 @@ async function handleLocalChat(userText: string) {
               const treasuryAddr = savedSettings.treasury_address || "0xffc5bb02aa137b5df823f9a241196866a827f352b80c8c5d88e757d6a3e667f8";
               tx.transferObjects([coin], treasuryAddr);
               
-              const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+              await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
               const usdcReceived = (amount * 1.2).toFixed(2);
               toolResult = `✅ Swap thành công! ${amount} SUI → ${usdcReceived} USDC 🎉`;
             }
@@ -1523,7 +1519,7 @@ async function handleLocalChat(userText: string) {
                     const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
                     tx.transferObjects([coin], recipient);
                     
-                    const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                    await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
                     toolResult = `✅ Đã chuyển ${amount} SUI thành công! 🎉`;
                   }
                 } else {
@@ -1542,13 +1538,13 @@ async function handleLocalChat(userText: string) {
                 const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
                 tx.transferObjects([coin], resolvedAddress);
                 
-                const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
                 toolResult = `✅ Đã chuyển ${amount} SUI thành công cho ${candidates[0].alias}! 🎉`;
               } else {
                 pendingTransfer = {
                   recipientAlias: recipient,
-                  amount: amount,
-                  candidates: candidates
+                  amount,
+                  candidates
                 };
                 
                 let reply = `⚠️ Có nhiều địa chỉ ví khớp với danh bạ "${recipient}":\n`;
@@ -1569,12 +1565,12 @@ async function handleLocalChat(userText: string) {
         if (!address || !address.startsWith('0x')) {
           toolResult = "❌ Địa chỉ ví không hợp lệ!";
         } else {
-          let currentList = [...FAST_TRANSFER_WALLETS];
+          const currentList = [...FAST_TRANSFER_WALLETS];
           const exists = currentList.some(w => w.address.toLowerCase() === address.toLowerCase());
           if (!exists) {
             currentList.push({ alias, address });
             await window.electronAPI.updateSettings({ fastTransferWallets: currentList });
-            toolResult = `✅ Đã thêm ${alias ? alias + ' (' + address + ')' : address} vào danh sách chuyển nhanh! Bạn có thể xem trong Settings.`;
+            toolResult = `✅ Đã thêm ${alias ? `${alias} (${address})` : address} vào danh sách chuyển nhanh! Bạn có thể xem trong Settings.`;
           } else {
             toolResult = `ℹ️ Địa chỉ ${address} đã có sẵn trong danh sách!`;
           }
@@ -1585,7 +1581,7 @@ async function handleLocalChat(userText: string) {
         if (!address && !alias) {
           toolResult = "❌ Thiếu thông tin địa chỉ ví hoặc alias cần xoá!";
         } else {
-          let currentList = [...FAST_TRANSFER_WALLETS];
+          const currentList = [...FAST_TRANSFER_WALLETS];
           let filteredList = currentList;
           if (address) {
             filteredList = currentList.filter(w => w.address.toLowerCase() !== address.toLowerCase());
@@ -1671,7 +1667,7 @@ async function handleLocalChat(userText: string) {
                       ]
                     });
 
-                    const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                    await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
                     toolResult = `✅ Đã gõ đầu pet thành công! 🥊💥`;
                   }
                 }
@@ -1735,7 +1731,7 @@ async function handleLocalChat(userText: string) {
 
                 maybeAppendLevelUp(tx);
 
-                const result = await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
                 toolResult = `✅ Đã tặng ${amount} SUI kèm lời nhắn "${msgText}" thành công! 🎁🎉`;
               }
             }
@@ -1782,8 +1778,9 @@ let debugTimer: ReturnType<typeof setInterval> | null = null;
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'd' && e.key !== 'D') return;
   debugMode = !debugMode;
-  const canvas = document.getElementById('pet-canvas')!;
-  const panel = document.getElementById('debug-overlay')!;
+  const canvas = document.getElementById('pet-canvas') as HTMLCanvasElement | null;
+  const panel = document.getElementById('debug-overlay') as HTMLElement | null;
+  if (!canvas || !panel) return;
   canvas.classList.toggle('debug', debugMode);
   panel.classList.toggle('visible', debugMode);
   document.body.classList.toggle('debug', debugMode);

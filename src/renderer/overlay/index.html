@@ -2,8 +2,13 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MiniPet Overlay</title>
     <link rel="stylesheet" href="./overlay.css" />
+    <script>
+      // Keep rAF loop alive to prevent WKWebView from throttling
+      (function keepAlive() { requestAnimationFrame(keepAlive); })();
+    </script>
   </head>
   <body>
     <!-- Bong bóng lời thoại -->

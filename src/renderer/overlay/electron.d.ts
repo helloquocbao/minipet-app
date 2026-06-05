@@ -7,7 +7,7 @@ export interface ElectronAPI {
   updateSettings: (settings: Partial<any>) => Promise<void>;
   importPet: () => Promise<any[]>;
   importFolder: () => Promise<any[]>;
-  deletePet: (slug: string) => Promise<any[]>;
+
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => void;
   focus: () => void;
   setDragMode: (instanceId: string, enabled: boolean) => void;
@@ -62,6 +62,7 @@ export interface ElectronAPI {
   onDragDrop: (cb: (type: string, paths: string[]) => void) => void;
   onBlockchainEvent: (cb: (event: any) => void) => void;
   broadcastPetEvent: (event: string, payload: any) => Promise<void>;
+  suiRpcCall: (method: string, params: any[], rpcUrl: string) => Promise<any>;
 }
 declare global {
   interface Window {

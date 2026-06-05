@@ -1,8 +1,7 @@
 import { PetListItem } from '../../shared/types/pet.types';
 import { UserSettings } from '../../shared/types/settings.types';
 import { translations, Language } from '../../shared/i18n/translations';
-import { INTERACTION } from '../../shared/constants';
-import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
+import { SUI_CONFIG } from '../../shared/constants';
 
 // --- State Management ---
 let cachedPetList: PetListItem[] = [];
@@ -59,11 +58,11 @@ async function loadNftPets(): Promise<PetListItem[]> {
   }
   try {
     const addr = currentSettings.suiAddress;
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
-    const PACKAGE_ID = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
+    const rpcUrl = SUI_CONFIG.RPC_URL;
+    const PACKAGE_ID = SUI_CONFIG.PACKAGE_ID;
     const petType = `${PACKAGE_ID}::pet_nft::PetNFT`;
 
-    console.log('[Settings] Querying owned NFT pets from Sui testnet for:', addr);
+    // Querying owned NFT pets from Sui testnet
     const api = (window as any).electronAPI;
     const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
       addr,
@@ -75,7 +74,7 @@ async function loadNftPets(): Promise<PetListItem[]> {
 
     if (response.error) throw new Error(response.error.message);
     const data = response.result.data || [];
-    console.log('[Settings] Found NFT pets:', data.length);
+    // Found NFT pets
 
     return data.map((obj: any) => {
       const fields = obj.data?.content?.fields;
@@ -133,7 +132,7 @@ export async function initSettings(): Promise<void> {
   if (isInitialized) return;
   isInitialized = true;
   
-  console.log('[Settings] Initializing stable settings...');
+  // Initializing stable settings
   const { setupElectronShim } = await import('../../lib/electron-shim');
   setupElectronShim();
 
@@ -145,13 +144,6 @@ export async function initSettings(): Promise<void> {
       api.getSettings()
     ]);
 
-    // Force enable AI and Blockchain for Hackathon Demo Zero-Config
-    if (!settings.aiEnabled || !settings.suiEnabled) {
-      settings.aiEnabled = true;
-      settings.suiEnabled = true;
-      await api.updateSettings({ aiEnabled: true, suiEnabled: true });
-    }
-
     currentSettings = settings;
     lastSettingsJson = JSON.stringify(settings);
 
@@ -161,10 +153,11 @@ export async function initSettings(): Promise<void> {
     refreshUI();
     setupGlobalEventListeners();
     setupTabs();
-    setupPomodoro(settings.language || 'en');
+    void setupPomodoro(settings.language || 'en');
 
     // Unified settings update listener
-    api.onSettingsUpdate(async (data: any) => {
+    api.onSettingsUpdate((data: any) => {
+      void (async () => {
       const updated = data.settings;
       const updatedJson = JSON.stringify(updated);
       if (updatedJson === lastSettingsJson) return;
@@ -179,7 +172,7 @@ export async function initSettings(): Promise<void> {
 
       if (langChanged || petsChanged || suiStateChanged) {
         if (suiStateChanged) {
-          updateCachedPetList().then(() => {
+          void updateCachedPetList().then(() => {
             requestAnimationFrame(() => refreshUI());
           });
         }
@@ -187,17 +180,19 @@ export async function initSettings(): Promise<void> {
       } else {
         populateForm(updated);
       }
+      })();
     });
 
     // Reload settings when window gets focus (handles updates from external processes like release sync)
-    window.addEventListener('focus', async () => {
+    window.addEventListener('focus', () => {
+      void (async () => {
       try {
         const latest = await api.getSettings();
         const latestJson = JSON.stringify(latest);
         if (latestJson !== lastSettingsJson) {
           currentSettings = latest;
           lastSettingsJson = latestJson;
-          updateCachedPetList().then(() => {
+          void updateCachedPetList().then(() => {
             requestAnimationFrame(() => refreshUI());
           });
           requestAnimationFrame(() => refreshUI());
@@ -205,6 +200,7 @@ export async function initSettings(): Promise<void> {
       } catch (err) {
         console.error('Failed to reload settings on focus:', err);
       }
+      })();
     });
 
   } catch (err) {
@@ -218,11 +214,13 @@ function refreshUI() {
   refreshPending = true;
   
   requestAnimationFrame(() => {
-    const lang = currentSettings!.language as Language || 'en';
+    const settings = currentSettings;
+    if (!settings) return;
+    const lang = settings.language as Language || 'en';
     applyTranslations(lang);
-    renderPetGallery(cachedPetList, currentSettings!);
-    renderActivePets(currentSettings!, cachedPetList);
-    populateForm(currentSettings!);
+    renderPetGallery(cachedPetList, settings);
+    renderActivePets(settings, cachedPetList);
+    populateForm(settings);
     refreshPending = false;
   });
 }
@@ -233,6 +231,11 @@ function applyTranslations(lang: Language): void {
     const key = el.getAttribute('data-i18n') as string;
     if (t[key]) el.textContent = t[key];
   });
+  // Also update tooltips
+  document.querySelectorAll<HTMLElement>('[data-tooltip-i18n]').forEach(el => {
+    const key = el.getAttribute('data-tooltip-i18n') as string;
+    if (t[key]) el.setAttribute('data-tooltip', t[key]);
+  });
 }
 
 function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
@@ -240,7 +243,6 @@ function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
   if (!gallery) return;
 
   const activeSlugs = new Set(settings.activePets.map(p => p.slug));
-  const t = translations[settings.language as Language || 'en'];
   const fragment = document.createDocumentFragment();
 
   for (const pet of pets) {
@@ -262,15 +264,7 @@ function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
     name.className = 'pet-name';
     name.textContent = pet.displayName;
 
-    if (!pet.isDefault && !pet.slug.startsWith('nft-')) {
-      const delBtn = document.createElement('div');
-      delBtn.className = 'delete-pet-btn';
-      delBtn.innerHTML = '×';
-      delBtn.dataset.action = 'delete';
-      delBtn.title = t.deletePet || 'Delete';
-      card.appendChild(delBtn);
-    }
-
+    // Delete pet functionality removed by user request
     card.appendChild(thumb);
     card.appendChild(name);
     fragment.appendChild(card);
@@ -292,7 +286,6 @@ function renderActivePets(settings: UserSettings, pets: PetListItem[]) {
 
   container.style.display = 'flex';
   const fragment = document.createDocumentFragment();
-  const t = translations[settings.language as Language || 'en'];
 
   for (const instance of settings.activePets) {
     const petType = pets.find(p => p.slug === instance.slug);
@@ -309,18 +302,8 @@ function renderActivePets(settings: UserSettings, pets: PetListItem[]) {
     name.className = 'instance-name';
     name.textContent = petType.displayName;
 
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-instance-btn';
-    removeBtn.innerHTML = '×';
-    removeBtn.dataset.instanceId = instance.id;
-    removeBtn.dataset.action = 'remove';
-    removeBtn.title = t.removePet;
-
-    if (settings.activePets.length <= 1) removeBtn.style.display = 'none';
-
     item.appendChild(thumb);
     item.appendChild(name);
-    item.appendChild(removeBtn);
     fragment.appendChild(item);
   }
 
@@ -331,49 +314,38 @@ function renderActivePets(settings: UserSettings, pets: PetListItem[]) {
 function setupGlobalEventListeners() {
   const api = (window as any).electronAPI;
   
-  document.getElementById('pet-gallery')?.addEventListener('click', async (e) => {
+  document.getElementById('pet-gallery')?.addEventListener('click', (e) => {
+    void (async () => {
     const target = e.target as HTMLElement;
     const card = target.closest('.pet-card') as HTMLElement;
     if (!card || !currentSettings) return;
 
-    const slug = card.dataset.slug!;
+    const slug = card.dataset.slug ?? '';
     const isSpawned = card.dataset.spawned === 'true';
     const pet = cachedPetList.find(p => p.slug === slug);
     if (!pet) return;
 
-    if (target.classList.contains('delete-pet-btn')) {
-      e.stopPropagation();
-      const t = translations[currentSettings.language as Language || 'en'];
-      if (confirm(`${t.deletePet || 'Delete'} ${pet.displayName}?`)) {
-        await api.deletePet(slug);
-        thumbnailCache.delete(slug);
-        await updateCachedPetList();
-        refreshUI();
-      }
-      return;
-    }
+    // Delete pet handler removed
 
     try {
       if (isSpawned) {
-        const instance = currentSettings.activePets.find(ap => ap.slug === slug);
-        if (instance) await api.removePet(instance.id);
+        // Pet is already active, do nothing.
+        return;
       } else {
         // Automatically spawn the pet. The backend will handle clearing the old pet.
         card.classList.add('active');
         await api.spawnPet(slug);
       }
+      await updateCachedPetList();
+      refreshUI();
     } catch (err: any) {
       showToast(err.toString(), 'error');
       refreshUI();
     }
+    })();
   });
 
-  document.getElementById('active-pets-list')?.addEventListener('click', async (e) => {
-    const target = e.target as HTMLElement;
-    if (target.dataset.action === 'remove' && target.dataset.instanceId) {
-      await api.removePet(target.dataset.instanceId);
-    }
-  });
+  // Remove instance handler removed
 
   const langSelect = document.getElementById('language-select') as HTMLSelectElement;
   langSelect?.addEventListener('change', () => api.updateSettings({ language: langSelect.value }));
@@ -396,20 +368,23 @@ function setupGlobalEventListeners() {
     api.updateSettings({ launchAtStartup: (e.target as HTMLInputElement).checked });
   });
 
-  document.getElementById('ai-enabled-toggle')?.addEventListener('change', async (e) => {
+  document.getElementById('ai-enabled-toggle')?.addEventListener('change', (e) => {
+    void (async () => {
     const target = e.target as HTMLInputElement;
-    target.checked = true;
-    await api.updateSettings({ aiEnabled: true });
-    updateAiStatusUI(true);
+    await api.updateSettings({ aiEnabled: target.checked });
+    updateAiStatusUI(target.checked);
+    })();
   });
 
   const geminiApiKeyInput = document.getElementById('gemini-api-key-input') as HTMLInputElement;
   let geminiKeyDebounce: any = null;
   geminiApiKeyInput?.addEventListener('input', () => {
     if (geminiKeyDebounce) clearTimeout(geminiKeyDebounce);
-    geminiKeyDebounce = setTimeout(async () => {
+    geminiKeyDebounce = setTimeout(() => {
+      void (async () => {
         const key = geminiApiKeyInput.value.trim();
         await api.updateSettings({ geminiApiKey: key });
+      })();
     }, 500);
   });
 
@@ -423,25 +398,39 @@ function setupGlobalEventListeners() {
   });
 
   // Automatically refresh UI on blockchain events (e.g. received money)
-  api.onBlockchainEvent((event: any) => {
-    console.log('[Settings] Blockchain event received:', event);
-    refreshSuiBalance();
-    refreshSuiAssets();
-    refreshSuiActivity();
+  api.onBlockchainEvent((_event: any) => {
+    void refreshSuiBalance();
+    void refreshSuiAssets();
+    void refreshSuiActivity();
   });
 
-  document.getElementById('sui-enabled-toggle')?.addEventListener('change', async (e) => {
+  const handleWalletModeChange = (e: Event) => {
+    void (async () => {
     const target = e.target as HTMLInputElement;
-    target.checked = true;
-    await api.updateSettings({ suiEnabled: true });
-    updateSuiStatusUI(true);
-    setTimeout(() => refreshSuiBalance(), 100);
+    if (target.checked) {
+      await api.updateSettings({ walletMode: target.value });
+    }
+    })();
+  };
+  document.getElementById('mode-agent')?.addEventListener('change', handleWalletModeChange);
+  document.getElementById('mode-zklogin')?.addEventListener('change', handleWalletModeChange);
+
+  document.getElementById('sui-enabled-toggle')?.addEventListener('change', (e) => {
+    void (async () => {
+    const target = e.target as HTMLInputElement;
+    await api.updateSettings({ suiEnabled: target.checked });
+    updateSuiStatusUI(target.checked);
+    if (target.checked) {
+      setTimeout(() => { void refreshSuiBalance(); }, 100);
+    }
+    })();
   });
 
   const suiAddressInput = document.getElementById('sui-address-input') as HTMLInputElement;
   let suiAddrDebounce: any = null;
 
-  const saveSuiAddress = async () => {
+  const saveSuiAddress = () => {
+    void (async () => {
     if (suiAddrDebounce) clearTimeout(suiAddrDebounce);
     const addr = suiAddressInput.value.trim();
     updateExplorerLink(addr);
@@ -452,6 +441,7 @@ function setupGlobalEventListeners() {
         showToast('Đã lưu địa chỉ ví SUI thành công!', 'success');
       }
     }
+    })();
   };
 
   suiAddressInput?.addEventListener('input', () => {
@@ -471,21 +461,21 @@ function setupGlobalEventListeners() {
   document.getElementById('copy-address-btn')?.addEventListener('click', () => {
     const val = suiAddressInput.value.trim();
     if (val) {
-      navigator.clipboard.writeText(val);
+      void navigator.clipboard.writeText(val);
       showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
     }
   });
   document.getElementById('copy-agent-address-btn')?.addEventListener('click', () => {
     const val = (document.getElementById('agent-address-input') as HTMLInputElement)?.value.trim();
     if (val) {
-      navigator.clipboard.writeText(val);
+      void navigator.clipboard.writeText(val);
       showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
     }
   });
   document.getElementById('check-wallet-btn')?.addEventListener('click', () => {
-    refreshSuiBalance();
-    refreshSuiAssets();
-    refreshSuiActivity();
+    void refreshSuiBalance();
+    void refreshSuiAssets();
+    void refreshSuiActivity();
   });
 
   const explorerLink = document.getElementById('explorer-link');
@@ -510,18 +500,22 @@ function setupGlobalEventListeners() {
     }
   });
 
-  document.getElementById('disconnect-wallet-btn')?.addEventListener('click', async () => {
+  document.getElementById('disconnect-wallet-btn')?.addEventListener('click', () => {
+    void (async () => {
     const lang = currentSettings?.language || 'en';
     const isVi = lang === 'vi';
     const confirmMsg = isVi ? 'Bạn có muốn ngắt kết nối ví SUI không?' : 'Are you sure you want to disconnect your SUI wallet?';
     const successMsg = isVi ? 'Ngắt kết nối ví thành công!' : 'Wallet disconnected successfully!';
+    // eslint-disable-next-line no-alert
     if (confirm(confirmMsg)) {
       await api.updateSettings({ suiAddress: '', suiEnabled: false });
       showToast(successMsg);
     }
+    })();
   });
 
-  document.getElementById('refresh-blockchain-btn')?.addEventListener('click', async () => {
+  document.getElementById('refresh-blockchain-btn')?.addEventListener('click', () => {
+    void (async () => {
     const btn = document.getElementById('refresh-blockchain-btn');
     if (btn) btn.classList.add('spinning');
     await Promise.all([
@@ -530,6 +524,7 @@ function setupGlobalEventListeners() {
       refreshSuiActivity()
     ]);
     setTimeout(() => btn?.classList.remove('spinning'), 600);
+    })();
   });
 
   document.getElementById('ping-pet-btn')?.addEventListener('click', () => api.pingPet());
@@ -538,7 +533,8 @@ function setupGlobalEventListeners() {
   const whitelistAliasInput = document.getElementById('whitelist-alias-input') as HTMLInputElement;
   const whitelistAddressInput = document.getElementById('whitelist-address-input') as HTMLInputElement;
 
-  addWhitelistBtn?.addEventListener('click', async () => {
+  addWhitelistBtn?.addEventListener('click', () => {
+    void (async () => {
     const alias = whitelistAliasInput.value.trim();
     const address = whitelistAddressInput.value.trim();
 
@@ -558,15 +554,20 @@ function setupGlobalEventListeners() {
     }
 
     const newList = [...wallets, { alias, address }];
+    const settingsRef = currentSettings;
     
     await api.updateSettings({ fastTransferWallets: newList });
-    currentSettings.fastTransferWallets = newList;
-    
-    whitelistAliasInput.value = '';
-    whitelistAddressInput.value = '';
 
-    renderFastTransferList(currentSettings);
+    // Capture inputs before any async gap for atomic update
+    const aliasInput = whitelistAliasInput;
+    const addrInput = whitelistAddressInput;
+    settingsRef.fastTransferWallets = newList;
+    aliasInput.value = '';
+    addrInput.value = '';
+
+    renderFastTransferList(settingsRef);
     showToast('Added to whitelist! 🎉');
+    })();
   });
 }
 
@@ -607,18 +608,33 @@ function populateForm(settings: UserSettings): void {
     if (settings.agentAddress) {
       agentAddressInp.value = settings.agentAddress;
     } else {
-      // Generate new one
-      import('@mysten/sui/keypairs/ed25519').then(({ Ed25519Keypair }) => {
-        const kp = new Ed25519Keypair();
-        const address = kp.toSuiAddress();
-        const secret = kp.getSecretKey();
-        agentAddressInp.value = address;
-        // Save to settings
-        (window as any).electronAPI.updateSettings({
-          agentAddress: address,
-          agentSecretKey: secret
-        });
-      }).catch(err => console.error('Failed to generate agent keypair:', err));
+      // Generate keypair on the Rust backend, then derive address on frontend
+      void import('@tauri-apps/api/core').then(({ invoke: tauriInvoke }) => {
+        void tauriInvoke('generate_agent_keypair').then((secretB64: any) => {
+          void (async () => {
+          if (secretB64) {
+            try {
+              const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+              // Decode base64 to derive address
+              const binaryStr = atob(secretB64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+              }
+              const kp = Ed25519Keypair.fromSecretKey(bytes);
+              const address = kp.toSuiAddress();
+              agentAddressInp.value = address;
+              (window as any).electronAPI.updateSettings({
+                agentAddress: address,
+                agentSecretKey: kp.getSecretKey()
+              });
+            } catch (err) {
+              console.error('Failed to derive agent address:', err);
+            }
+          }
+          })();
+        }).catch((err: any) => console.error('Failed to generate agent keypair:', err));
+      });
     }
   }
 
@@ -626,9 +642,9 @@ function populateForm(settings: UserSettings): void {
     suiToggle.checked = settings.suiEnabled || false;
   }
   if (settings.suiEnabled) {
-    refreshSuiBalance();
-    refreshSuiAssets();
-    refreshSuiActivity();
+    void refreshSuiBalance();
+    void refreshSuiAssets();
+    void refreshSuiActivity();
   }
   if (suiAddr && document.activeElement !== suiAddr) {
     suiAddr.value = settings.suiAddress || '';
@@ -641,6 +657,34 @@ function populateForm(settings: UserSettings): void {
   if (syncBtn) syncBtn.style.display = hasWallet ? 'none' : 'flex';
   if (disconnectBtn) disconnectBtn.style.display = hasWallet ? 'flex' : 'none';
 
+  const modeAgent = document.getElementById('mode-agent') as HTMLInputElement;
+  const modeZklogin = document.getElementById('mode-zklogin') as HTMLInputElement;
+  const modeZkloginLabel = document.getElementById('mode-zklogin-label');
+  const modeZkloginText = document.getElementById('mode-zklogin-text');
+
+  if ((settings as any).zkLoginSession) {
+    if (modeZklogin) modeZklogin.disabled = false;
+    if (modeZkloginLabel) modeZkloginLabel.title = '';
+    if (modeZkloginText) {
+      modeZkloginText.textContent = 'zkLogin Wallet (Synced)';
+      modeZkloginText.style.color = '#4ade80';
+    }
+  } else {
+    if (modeZklogin) modeZklogin.disabled = true;
+    if (modeZkloginLabel) modeZkloginLabel.title = 'Sync zkLogin from Browser first';
+    if (modeZkloginText) {
+      modeZkloginText.textContent = 'zkLogin Wallet (Not Synced)';
+      modeZkloginText.style.color = '';
+      modeZkloginText.style.opacity = '0.45';
+    }
+  }
+
+  if ((settings as any).walletMode === 'zklogin' && (settings as any).zkLoginSession) {
+    if (modeZklogin) modeZklogin.checked = true;
+  } else {
+    if (modeAgent) modeAgent.checked = true;
+  }
+
   renderFastTransferList(settings);
 }
 
@@ -651,31 +695,21 @@ function renderFastTransferList(settings: any) {
   const wallets: { alias: string; address: string }[] = settings.fastTransferWallets || [];
   
   if (wallets.length === 0) {
-    container.innerHTML = `
-      <li style="padding: 12px; text-align: center; color: rgba(255,255,255,0.5); font-size: 13px;">
-        Empty whitelist
-      </li>
-    `;
+    container.innerHTML = '';
     return;
   }
   
   container.innerHTML = wallets.map((wallet, index) => `
-    <li class="whitelist-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; gap: 8px;">
-      <span class="whitelist-alias" style="color: #a78bfa; font-weight: 600; flex: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-        ${wallet.alias || 'Unnamed'}
-      </span>
-      <span class="whitelist-address" style="color: rgba(255, 255, 255, 0.6); font-family: 'JetBrains Mono', monospace; flex: 2.5; font-size: 11px; word-break: break-all;">
-        ${wallet.address}
-      </span>
-      <button class="remove-whitelist-btn" data-index="${index}" style="background: none; border: none; color: #ff4757; cursor: pointer; padding: 4px; transition: all 0.2s; font-size: 14px;">
-        🗑️
-      </button>
+    <li class="whitelist-item">
+      <span class="whitelist-alias">${wallet.alias || 'Unnamed'}</span>
+      <span class="whitelist-address">${wallet.address.slice(0, 10)}...${wallet.address.slice(-6)}</span>
+      <button class="remove-whitelist-btn" data-index="${index}" aria-label="Remove">✕</button>
     </li>
   `).join('');
 
-  // Add click listener for all remove buttons
   container.querySelectorAll('.remove-whitelist-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
+      void (async () => {
       const idxStr = (e.currentTarget as HTMLElement).getAttribute('data-index');
       if (idxStr === null) return;
       const idx = parseInt(idxStr);
@@ -687,6 +721,7 @@ function renderFastTransferList(settings: any) {
       await api.updateSettings({ fastTransferWallets: newList });
       currentSettings.fastTransferWallets = newList;
       renderFastTransferList(currentSettings);
+      })();
     });
   });
 }
@@ -716,14 +751,12 @@ async function refreshSuiBalance() {
   const display = document.getElementById('sui-balance-display');
 
   if (!enabled || !addr) {
-    console.log('[Settings] Skipping balance fetch: disabled or no address');
     if (display) display.textContent = '0.000 SUI';
     return;
   }
 
   // Basic SUI address validation
   if (!addr.startsWith('0x') || addr.length < 64) {
-    console.log('[Settings] Skipping balance fetch: invalid address format');
     if (display) display.textContent = 'Invalid Address';
     return;
   }
@@ -731,8 +764,7 @@ async function refreshSuiBalance() {
   if (display) display.textContent = '...';
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
-    console.log('[Settings] Fetching balance via Rust for:', addr);
+    const rpcUrl = SUI_CONFIG.RPC_URL;
     
     const response: any = await api.suiRpcCall('suix_getBalance', [addr, '0x2::sui::SUI'], rpcUrl);
     
@@ -741,7 +773,6 @@ async function refreshSuiBalance() {
     }
 
     const balance = response.result;
-    console.log('[Settings] Raw balance result (Rust):', balance);
     if (display) {
       if (balance && balance.totalBalance !== undefined) {
         // SUI has 9 decimals
@@ -781,10 +812,9 @@ async function refreshSuiAssets() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
-    console.log('[Settings] Fetching assets via Rust for:', addr);
+    const rpcUrl = SUI_CONFIG.RPC_URL;
     
-    const PACKAGE_ID = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
+    const PACKAGE_ID = SUI_CONFIG.PACKAGE_ID;
     const petType = `${PACKAGE_ID}::pet_nft::PetNFT`;
     const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
         addr,
@@ -841,13 +871,12 @@ async function refreshSuiActivity() {
   if (!container) return;
 
   try {
-    const rpcUrl = getJsonRpcFullnodeUrl('testnet');
-    console.log('[Settings] Fetching activity via Rust for:', addr);
+    const rpcUrl = SUI_CONFIG.RPC_URL;
 
     const response: any = await api.suiRpcCall('suix_queryEvents', [
         {
           MoveModule: {
-            package: '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c',
+            package: SUI_CONFIG.PACKAGE_ID,
             module: 'pet_nft'
           }
         },
@@ -892,7 +921,7 @@ async function refreshSuiActivity() {
 }
 
 function setupTabs(): void {
-  const tabs = document.querySelectorAll('.tab-btn');
+  const tabs = document.querySelectorAll('.nav-item');
   const panels = document.querySelectorAll('.tab-panel');
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
@@ -903,10 +932,10 @@ function setupTabs(): void {
         p.classList.remove('active');
         if (p.id === `tab-${target}`) {
           p.classList.add('active');
-          if (target === 'blockchain') {
-            refreshSuiBalance();
-            refreshSuiAssets();
-            refreshSuiActivity();
+          if (target === 'ai-web3') {
+            void refreshSuiBalance();
+            void refreshSuiAssets();
+            void refreshSuiActivity();
           }
         }
       });
@@ -918,12 +947,12 @@ async function setupPomodoro(lang: Language): Promise<void> {
   const api = (window as any).electronAPI;
   const focusInput = document.getElementById('pomo-focus-time') as HTMLInputElement;
   const breakInput = document.getElementById('pomo-break-time') as HTMLInputElement;
-  const display = document.getElementById('pomo-display')!;
-  const status = document.getElementById('pomo-status')!;
-  const startBtn = document.getElementById('pomo-start-btn')!;
-  const pauseBtn = document.getElementById('pomo-pause-btn')!;
+  const display = document.getElementById('pomo-display');
+  const status = document.getElementById('pomo-status');
+  const startBtn = document.getElementById('pomo-start-btn');
+  const pauseBtn = document.getElementById('pomo-pause-btn');
   
-  if (!focusInput || !breakInput) return;
+  if (!focusInput || !breakInput || !display || !status || !startBtn || !pauseBtn) return;
 
   let isEditing = false;
   focusInput.addEventListener('focus', () => isEditing = true);
@@ -978,4 +1007,4 @@ async function setupPomodoro(lang: Language): Promise<void> {
   if (initial) updateUI(initial, lang);
 }
 
-document.addEventListener('DOMContentLoaded', initSettings);
+document.addEventListener('DOMContentLoaded', () => { void initSettings(); });

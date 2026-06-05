@@ -1,4 +1,4 @@
-use std::process::Command;
+use tokio::process::Command;
 use tauri::{AppHandle, Emitter};
 
 use std::sync::Mutex;
@@ -13,29 +13,34 @@ static CACHE: Mutex<Option<AppCache>> = Mutex::new(None);
 const CACHE_DURATION: Duration = Duration::from_secs(2);
 
 #[allow(dead_code)]
-pub fn get_active_app() -> Option<String> {
+pub async fn get_active_app() -> Option<String> {
     if cfg!(target_os = "macos") {
-        let mut cache = CACHE.lock().unwrap();
-
-        if let Some(c) = &*cache {
-            if c.last_updated.elapsed() < CACHE_DURATION {
-                return c.name.clone();
+        {
+            let cache = CACHE.lock().unwrap();
+            if let Some(c) = &*cache {
+                if c.last_updated.elapsed() < CACHE_DURATION {
+                    return c.name.clone();
+                }
             }
-        }
+        } // Lock dropped here
 
         let output = Command::new("osascript")
             .arg("-e")
             .arg("tell application \"System Events\" to get name of first process whose frontmost is true")
             .output()
+            .await
             .ok()?;
 
         let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let result = if name.is_empty() { None } else { Some(name) };
 
-        *cache = Some(AppCache {
-            name: result.clone(),
-            last_updated: Instant::now(),
-        });
+        {
+            let mut cache = CACHE.lock().unwrap();
+            *cache = Some(AppCache {
+                name: result.clone(),
+                last_updated: Instant::now(),
+            });
+        }
 
         result
     } else {
@@ -44,7 +49,7 @@ pub fn get_active_app() -> Option<String> {
 }
 
 #[allow(dead_code)]
-pub fn get_browser_tab(browser: &str) -> Option<String> {
+pub async fn get_browser_tab(browser: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
         let script = match browser {
             b if b.contains("Chrome") => {
@@ -63,6 +68,7 @@ pub fn get_browser_tab(browser: &str) -> Option<String> {
             .arg("-e")
             .arg(script)
             .output()
+            .await
             .ok()?;
         let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if title.is_empty() {
@@ -76,7 +82,7 @@ pub fn get_browser_tab(browser: &str) -> Option<String> {
 }
 
 #[allow(dead_code)]
-pub fn get_browser_url(browser: &str) -> Option<String> {
+pub async fn get_browser_url(browser: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
         let script = match browser {
             b if b.contains("Chrome") => {
@@ -95,6 +101,7 @@ pub fn get_browser_url(browser: &str) -> Option<String> {
             .arg("-e")
             .arg(script)
             .output()
+            .await
             .ok()?;
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if url.is_empty() {

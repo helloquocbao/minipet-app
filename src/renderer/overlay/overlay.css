@@ -24,12 +24,16 @@ body {
   position: absolute;
   bottom: 0;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateZ(0);
   display: block;
   cursor: pointer;
   z-index: 10;
   -webkit-user-drag: none;
   outline: none;
+  /* Force a dedicated GPU compositing layer so macOS WKWebView never
+     discards the canvas backing store between slow animation frames. */
+  will-change: contents;
+  isolation: isolate;
 }
 
 body.debug {
