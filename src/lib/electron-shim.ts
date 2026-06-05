@@ -7,37 +7,47 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
 
-console.log('[Shim] electron-shim.ts module loaded');
-
 export function setupElectronShim() {
-  console.log('[Shim] setupElectronShim() called');
   const win = getCurrentWebviewWindow();
   // Cache logical position to avoid async outerPosition() race conditions
-  let cachedX: number | null = null;
-  let cachedY: number | null = null;
+  // Using object property to avoid require-atomic-updates on plain let vars
+  const cache = { x: null as number | null, y: null as number | null };
 
   // Sync cache from actual window position on init
   let cachedMonitorX = 0;
+  let cachedMonitorY = 0;
   let cachedMonitorW = window.screen.availWidth;
+  let cachedMonitorH = window.screen.availHeight;
 
   const updateMonitor = async () => {
-    const m = await win.currentMonitor();
-    if (m) {
-      const dpr = window.devicePixelRatio || 1;
-      cachedMonitorX = m.position.x / dpr;
-      cachedMonitorW = m.size.width / dpr;
+    try {
+      // Get work area from Rust — correctly excludes Dock (macOS) and Taskbar (Windows)
+      const wa: any = await invoke('get_monitor_work_area');
+      cachedMonitorX = wa.x;
+      cachedMonitorY = wa.y;
+      cachedMonitorW = wa.width;
+      cachedMonitorH = wa.height;
+    } catch {
+      // fallback: use CSS screen dimensions
+      const m = await win.currentMonitor();
+      if (m) {
+        const dpr = window.devicePixelRatio || 1;
+        cachedMonitorX = m.position.x / dpr;
+        cachedMonitorY = m.position.y / dpr;
+        cachedMonitorW = m.size.width / dpr;
+        cachedMonitorH = m.size.height / dpr;
+      }
     }
   };
 
-  win.outerPosition().then(pos => {
+  void win.outerPosition().then(pos => {
     const dpr = window.devicePixelRatio || 1;
-    cachedX = pos.x / dpr;
-    cachedY = pos.y / dpr;
+    cache.x = pos.x / dpr;
+    cache.y = pos.y / dpr;
   });
-  updateMonitor();
+  void updateMonitor();
 
 
-  console.log('[Shim] Setting window.electronAPI');
   (window as any).electronAPI = {
     // --- Pet ---
     getActivePet: () => invoke('get_installed_pets'),
@@ -85,30 +95,36 @@ export function setupElectronShim() {
       if (selected) return invoke('import_pet', { sourcePath: selected });
       return null;
     },
-    deletePet: (slug: string) => invoke('delete_pet', { slug }),
 
     // --- Window ---
     setIgnoreMouseEvents: (ignore: boolean, _options?: { forward: boolean }) => {
-      win.setIgnoreCursorEvents(ignore);
+      void win.setIgnoreCursorEvents(ignore);
     },
     focus: () => {
-      win.setFocus().catch(() => {});
+      void win.setFocus().catch(() => {});
     },
     setDragMode: (instanceId: string, enabled: boolean) => {
-      invoke('set_drag_mode', { instanceId, enabled });
+      void invoke('set_drag_mode', { instanceId, enabled });
     },
     moveWindow: async (deltaX: number, deltaY: number) => {
       const dpr = window.devicePixelRatio || 1;
-      if (cachedX === null || cachedY === null) {
-        const pos = await win.outerPosition();
-        cachedX = pos.x / dpr;
-        cachedY = pos.y / dpr;
+      // Snapshot before any await to avoid require-atomic-updates
+      let snapX = cache.x;
+      let snapY = cache.y;
+      if (snapX === null || snapY === null) {
+        const outerPos = await win.outerPosition();
+        snapX = outerPos.x / dpr;
+        snapY = outerPos.y / dpr;
       }
-      cachedX += deltaX;
-      cachedY += deltaY;
+      const nextX = snapX + deltaX;
+      const nextY = snapY + deltaY;
+      // eslint-disable-next-line require-atomic-updates
+      cache.x = nextX;
+      // eslint-disable-next-line require-atomic-updates
+      cache.y = nextY;
       // Use round to avoid sub-pixel jitter in window position
-      const rx = Math.round(cachedX);
-      const ry = Math.round(cachedY);
+      const rx = Math.round(nextX);
+      const ry = Math.round(nextY);
       await win.setPosition(new LogicalPosition(rx, ry));
     },
     resizeWindow: async (width: number, height: number) => {
@@ -122,20 +138,27 @@ export function setupElectronShim() {
       if (instanceId) {
         const newPos: any = await invoke('resize_window_keep_bottom', { instanceId, width, height });
         if (newPos) {
-          cachedX = newPos.x;
-          cachedY = newPos.y;
+          cache.x = newPos.x;
+          cache.y = newPos.y;
         }
       } else {
         const dpr = window.devicePixelRatio || 1;
-        if (cachedX === null || cachedY === null) {
-          const pos = await win.outerPosition();
-          cachedX = pos.x / dpr;
-          cachedY = pos.y / dpr;
+        // Snapshot before any await to avoid require-atomic-updates
+        let snapX = cache.x;
+        let snapY = cache.y;
+        if (snapX === null || snapY === null) {
+          const outerPos = await win.outerPosition();
+          snapX = outerPos.x / dpr;
+          snapY = outerPos.y / dpr;
         }
         const oldH = window.innerHeight;
         const deltaH = height - oldH;
-        cachedY -= deltaH;
-        await win.setPosition(new LogicalPosition(cachedX, cachedY));
+        const nextY = snapY - deltaH;
+        // eslint-disable-next-line require-atomic-updates
+        cache.x = snapX;
+        // eslint-disable-next-line require-atomic-updates
+        cache.y = nextY;
+        await win.setPosition(new LogicalPosition(snapX, nextY));
         await win.setSize(new LogicalSize(Math.max(50, width), Math.max(50, height)));
       }
     },
@@ -150,45 +173,45 @@ export function setupElectronShim() {
       // window.screenX can be physical on some platforms in WRY/Tauri.
       const screenW = window.screen.width;
       
-      let finalX = (x !== undefined) ? x : (cachedX || 0);
-      let finalY = (y !== undefined) ? y : (cachedY || 0);
+      let finalX = (x !== undefined) ? x : (cache.x || 0);
+      let finalY = (y !== undefined) ? y : (cache.y || 0);
 
       if (finalX > screenW) finalX /= dpr;
       if (finalY > window.screen.height) finalY /= dpr;
 
-      cachedX = finalX;
-      cachedY = finalY;
-      invoke('save_position', { instanceId, x: finalX, y: finalY });
+      cache.x = finalX;
+      cache.y = finalY;
+      void invoke('save_position', { instanceId, x: finalX, y: finalY });
     },
-    getLogicalPosition: () => ({ x: cachedX, y: cachedY }),
-    getMonitorBounds: () => ({ x: cachedMonitorX, width: cachedMonitorW }),
+    getLogicalPosition: () => ({ x: cache.x, y: cache.y }),
+    getMonitorBounds: () => ({ x: cachedMonitorX, y: cachedMonitorY, width: cachedMonitorW, height: cachedMonitorH }),
 
     // --- Events ---
     onSettingsUpdate: (cb: (data: any) => void) => {
-      listen('settings:update', (e) => cb({ settings: e.payload }));
+      void listen('settings:update', (e) => cb({ settings: e.payload }));
     },
     onNotification: (_cb: (payload: any) => void) => {},
-    onPing: (cb: () => void) => { listen('pet:ping', () => cb()); },
-    onStartAlarm: (cb: () => void) => { listen('pet:start-alarm', () => cb()); },
-    onStopAlarm: (cb: () => void) => { listen('pet:stop-alarm', () => cb()); },
+    onPing: (cb: () => void) => { void listen('pet:ping', () => cb()); },
+    onStartAlarm: (cb: () => void) => { void listen('pet:start-alarm', () => cb()); },
+    onStopAlarm: (cb: () => void) => { void listen('pet:stop-alarm', () => cb()); },
     onPositionsUpdate: (cb: (data: any) => void) => {
-      listen('pets:positions-updated', (e) => cb({ positions: e.payload }));
+      void listen('pets:positions-updated', (e) => cb({ positions: e.payload }));
     },
-    onPomoTick: (cb: (state: any) => void) => { listen('pomo:tick', (e) => cb(e.payload)); },
-    onPomoFinished: (cb: (sessionType: string) => void) => { listen('pomo:finished', (e) => cb(e.payload as string)); },
-    onPetSay: (cb: (payload: any) => void) => { listen('pet:say', (e) => cb(e.payload)); },
-    onSomeoneSpeaking: (cb: () => void) => { listen('pet:someone-speaking', () => cb()); },
+    onPomoTick: (cb: (state: any) => void) => { void listen('pomo:tick', (e) => cb(e.payload)); },
+    onPomoFinished: (cb: (sessionType: string) => void) => { void listen('pomo:finished', (e) => cb(e.payload as string)); },
+    onPetSay: (cb: (payload: any) => void) => { void listen('pet:say', (e) => cb(e.payload)); },
+    onSomeoneSpeaking: (cb: () => void) => { void listen('pet:someone-speaking', () => cb()); },
     onWindowMoved: (cb: (x: number, y: number) => void) => {
-      win.onMoved((event) => {
-        updateMonitor();
+      void win.onMoved((event) => {
+        void updateMonitor(); // refresh work area bounds (handles monitor switch)
         const pos = event.payload;
         const dpr = window.devicePixelRatio || 1;
-        cachedX = pos.x / dpr;
-        cachedY = pos.y / dpr;
-        cb(cachedX, cachedY);
+        cache.x = pos.x / dpr;
+        cache.y = pos.y / dpr;
+        cb(cache.x, cache.y);
       });
     },
-    onBlockchainEvent: (cb: (event: any) => void) => { listen('blockchain:event', (e) => cb(e.payload)); },
+    onBlockchainEvent: (cb: (event: any) => void) => { void listen('blockchain:event', (e) => cb(e.payload)); },
 
     // --- Pomodoro ---
     startPomo: (focus: number, breakMin: number) => invoke('pomo_start', { focus, breakMin }),
@@ -207,7 +230,7 @@ export function setupElectronShim() {
     getBrowserUrl: (browser: string) => invoke('get_browser_url', { browser }),
 
     onDragDrop: (cb: (type: string, paths: string[]) => void) => {
-      win.onDragDropEvent((event) => {
+      void win.onDragDropEvent((event) => {
         if (event.payload.type === 'enter') cb('enter', event.payload.paths);
         else if (event.payload.type === 'leave') cb('leave', []);
         else if (event.payload.type === 'drop') cb('drop', event.payload.paths);
@@ -219,8 +242,9 @@ export function setupElectronShim() {
     startAlarm: () => invoke('broadcast_pet_event', { event: 'pet:start-alarm', payload: {} }),
     stopAlarm: () => invoke('broadcast_pet_event', { event: 'pet:stop-alarm', payload: {} }),
     notifySpeaking: () => invoke('broadcast_pet_event', { event: 'pet:someone-speaking', payload: {} }),
+    reRaiseWindow: (instanceId: string) => invoke('re_raise_window', { instanceId }),
     onCustomEvent: (eventName: string, cb: (payload: any) => void) => {
-      listen(eventName, (e) => cb(e.payload));
+      void listen(eventName, (e) => cb(e.payload));
     },
     broadcastPetEvent: (event: string, payload: any) => 
       invoke('broadcast_pet_event', { event, payload })

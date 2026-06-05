@@ -2,6 +2,7 @@ use crate::pet::manager::{PetInstance, PetListItem, UserSettings};
 use crate::pet::pomodoro::PomodoroState;
 use crate::AppState;
 use tauri::{AppHandle, Emitter, Manager, State};
+use rand::Rng;
 
 // --- Pet Commands ---
 
@@ -28,13 +29,25 @@ pub async fn spawn_pet(
     slug: String,
 ) -> Result<PetInstance, String> {
     let mut mgr = state.pet_manager.lock().await;
-    
-    // Destroy existing pet windows since we only allow 1 pet
-    crate::window::overlay::destroy_all(&app);
-    
     let instance = mgr.spawn_pet(&slug).await?;
-    crate::window::overlay::create(&app, &instance.id, instance.x, instance.y)?;
-    // Notify settings window
+
+    // Check if there's already an overlay window running
+    let existing_windows: Vec<String> = app
+        .webview_windows()
+        .keys()
+        .filter(|k| k.starts_with("overlay-"))
+        .cloned()
+        .collect();
+
+    if existing_windows.is_empty() {
+        // No window exists — create fresh
+        crate::window::overlay::create(&app, &instance.id, instance.x, instance.y)?;
+    } else {
+        // Window already exists — just notify it to reload the new pet config.
+        // This avoids destroy+create which causes a visible blank flash.
+        // The overlay JS will handle reloading spritesheet via settings:update.
+    }
+
     let _ = app.emit("settings:update", mgr.get_settings());
     Ok(instance)
 }
@@ -195,8 +208,14 @@ pub fn toggle_visibility(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn exit_app(app: AppHandle) {
+pub async fn exit_app(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let mut process_lock = state.llama_process.lock().await;
+    if let Some(mut child) = process_lock.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -211,10 +230,13 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("Only http:// and https:// URLs are allowed for security reasons.".to_string());
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -223,14 +245,14 @@ pub fn open_url(url: String) -> Result<(), String> {
         std::process::Command::new("cmd")
             .arg("/C")
             .arg("start")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
-            .arg(url)
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -239,11 +261,30 @@ pub fn open_url(url: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn sui_rpc_call(
+    state: State<'_, AppState>,
     method: String,
     params: serde_json::Value,
     rpc_url: String,
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
+    // SSRF Prevention: Only allow known SUI RPC endpoints
+    let allowed_domains = ["sui.io", "mystenlabs.com", "walrus.space"];
+    let parsed_url = url::Url::parse(&rpc_url).map_err(|_| "Invalid RPC URL".to_string())?;
+
+    // Must be https (or http only for localhost dev)
+    let is_localhost = parsed_url.host_str().map(|h| h == "127.0.0.1" || h == "localhost").unwrap_or(false);
+    if parsed_url.scheme() != "https" && !(parsed_url.scheme() == "http" && is_localhost) {
+        return Err("Only HTTPS RPC URLs are allowed".to_string());
+    }
+
+    let domain_allowed = is_localhost || parsed_url.host_str().map(|host| {
+        allowed_domains.iter().any(|&domain| host == domain || host.ends_with(&format!(".{}", domain)))
+    }).unwrap_or(false);
+
+    if !domain_allowed {
+        return Err("Untrusted RPC URL. Only sui.io, mystenlabs.com, walrus.space domains are allowed.".to_string());
+    }
+
+    let client = state.reqwest_client.clone();
     let payload = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -284,24 +325,7 @@ pub async fn import_pet(
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn delete_pet(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    slug: String,
-) -> Result<Vec<PetListItem>, String> {
-    let mut mgr = state.pet_manager.lock().await;
-    let result = mgr.delete_pet(&slug).await?;
 
-    // Re-spawn windows
-    crate::window::overlay::destroy_all(&app);
-    for inst in &mgr.settings.active_pets {
-        let _ = crate::window::overlay::create(&app, &inst.id, inst.x, inst.y);
-    }
-
-    let _ = app.emit("settings:update", mgr.get_settings());
-    Ok(result)
-}
 
 // --- Pomodoro Commands ---
 
@@ -318,6 +342,9 @@ pub async fn pomo_start(
     focus: i32,
     #[allow(non_snake_case)] breakMin: i32,
 ) -> Result<(), String> {
+    if focus <= 0 || focus > 120 || breakMin < 0 || breakMin > 60 {
+        return Err("Invalid pomodoro parameters".to_string());
+    }
     let mut pomo = state.pomodoro.lock().await;
     pomo.start(focus, breakMin, state.pomo_state.clone(), app);
     Ok(())
@@ -326,14 +353,14 @@ pub async fn pomo_start(
 #[tauri::command]
 pub async fn pomo_pause(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let mut pomo = state.pomodoro.lock().await;
-    pomo.pause(&state.pomo_state, &app);
+    pomo.pause(&state.pomo_state, &app).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn pomo_reset(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let mut pomo = state.pomodoro.lock().await;
-    pomo.reset(&state.pomo_state, &app);
+    pomo.reset(&state.pomo_state, &app).await;
     Ok(())
 }
 
@@ -344,8 +371,11 @@ pub async fn pomo_update_config(
     focus: i32,
     #[allow(non_snake_case)] breakMin: i32,
 ) -> Result<(), String> {
+    if focus <= 0 || focus > 120 || breakMin < 0 || breakMin > 60 {
+        return Err("Invalid pomodoro parameters".to_string());
+    }
     let mut pomo = state.pomodoro.lock().await;
-    pomo.update_config(focus, breakMin, &state.pomo_state, &app);
+    pomo.update_config(focus, breakMin, &state.pomo_state, &app).await;
     Ok(())
 }
 
@@ -353,7 +383,47 @@ pub async fn pomo_update_config(
 
 #[tauri::command]
 pub fn broadcast_pet_event(app: AppHandle, event: String, payload: serde_json::Value) {
-    let _ = app.emit(&event, payload);
+    let allowed_static = [
+        "pet:start-alarm", "pomo:tick", "pomo:finished", "pet:eat",
+        "pet:someone-speaking", "pet:ping", "pet:say",
+        "global:chat-active",
+    ];
+    let allowed_prefixes = [
+        "update-speech-",
+        "chat-mode-",
+        "chat-mode-toggle-",
+        "user-chat-submit-",
+    ];
+
+    let is_allowed = allowed_static.contains(&event.as_str())
+        || allowed_prefixes.iter().any(|prefix| event.starts_with(prefix));
+
+    if is_allowed {
+        let _ = app.emit(&event, payload);
+    } else {
+        eprintln!("[broadcast_pet_event] Blocked unknown event: {}", event);
+    }
+}
+
+#[tauri::command]
+pub fn re_raise_window(app: AppHandle, instance_id: String) {
+    crate::window::overlay::re_raise_window(&app, &instance_id);
+}
+
+/// Returns the primary monitor's work area (excludes Dock/Taskbar) in logical pixels.
+#[tauri::command]
+pub fn get_monitor_work_area(app: AppHandle) -> serde_json::Value {
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
+        let wa = monitor.work_area();
+        return serde_json::json!({
+            "x": wa.position.x as f64 / scale,
+            "y": wa.position.y as f64 / scale,
+            "width": wa.size.width as f64 / scale,
+            "height": wa.size.height as f64 / scale,
+        });
+    }
+    serde_json::json!({ "x": 0, "y": 0, "width": 1920, "height": 1080 })
 }
 
 #[tauri::command]
@@ -362,53 +432,97 @@ pub fn debug_log(message: String) {
 }
 
 #[tauri::command]
-pub fn get_active_app() -> Option<String> {
-    crate::intelligence::get_active_app()
+pub async fn get_active_app() -> Result<Option<String>, String> {
+    Ok(crate::intelligence::get_active_app().await)
 }
 
 #[tauri::command]
-pub fn get_browser_tab(browser: String) -> Option<String> {
-    crate::intelligence::get_browser_tab(&browser)
+pub async fn get_browser_tab(browser: String) -> Result<Option<String>, String> {
+    Ok(crate::intelligence::get_browser_tab(&browser).await)
 }
 
 #[tauri::command]
-pub fn get_browser_url(browser: String) -> Option<String> {
-    crate::intelligence::get_browser_url(&browser)
+pub async fn get_browser_url(browser: String) -> Result<Option<String>, String> {
+    Ok(crate::intelligence::get_browser_url(&browser).await)
 }
 
 // --- Local AI Commands ---
 
 #[tauri::command]
+pub async fn generate_agent_keypair(
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mut mgr = state.pet_manager.lock().await;
+    
+    // If agent already has an address, return it
+    if !mgr.settings.agent_address.is_empty() {
+        return Ok(mgr.settings.agent_address.clone());
+    }
+    
+    // Generate a random 32-byte Ed25519 secret key
+    let secret_bytes: [u8; 32] = {
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 32];
+        rng.fill(&mut bytes);
+        bytes
+    };
+    
+    // Encode as base64 for storage (frontend will derive address from it)
+    let secret_b64 = base64_encode(&secret_bytes);
+    
+    mgr.settings.agent_secret_key = secret_b64.clone();
+    mgr.save_settings().await;
+    
+    // Return the secret key — frontend will derive the address
+    Ok(secret_b64)
+}
+
+#[tauri::command]
 pub fn check_model_exists(app: AppHandle) -> bool {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
-    model_path.exists()
+    let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
+    // File must be at least 900MB — the real model is ~986MB.
+    // Anything smaller means the download was incomplete or corrupt.
+    const MIN_VALID_SIZE: u64 = 900 * 1024 * 1024; // 900 MB
+    if let Ok(meta) = std::fs::metadata(&model_path) {
+        meta.len() >= MIN_VALID_SIZE
+    } else {
+        false
+    }
 }
 
 #[tauri::command]
 pub async fn download_model(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
-    
+    let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
+    const MIN_VALID_SIZE: u64 = 900 * 1024 * 1024;
+
+    // Remove corrupt/incomplete file before re-downloading
     if model_path.exists() {
-        return Ok(());
+        if let Ok(meta) = std::fs::metadata(&model_path) {
+            if meta.len() >= MIN_VALID_SIZE {
+                return Ok(()); // Already valid
+            }
+            eprintln!("[Model] Removing corrupt/incomplete model file ({} bytes)", meta.len());
+            let _ = std::fs::remove_file(&model_path);
+        }
     }
     
-    let url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+    let url = "https://huggingface.co/iamquocbao/minipet-qwen-model-SUI/resolve/main/qwen-sui-q4_k_m.gguf";
     
     let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
     let total_size = response.content_length().unwrap_or(0);
     
     use futures_util::StreamExt;
-    use std::io::Write;
+    use tokio::io::AsyncWriteExt;
     
-    let mut file = std::fs::File::create(&model_path).map_err(|e| e.to_string())?;
+    let mut file = tokio::fs::File::create(&model_path).await.map_err(|e| e.to_string())?;
     let mut downloaded: u64 = 0;
     let mut stream = response.bytes_stream();
     
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| e.to_string())?;
-        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
         
         let progress = if total_size > 0 {
@@ -424,13 +538,37 @@ pub async fn download_model(app: AppHandle) -> Result<(), String> {
         }));
     }
     
+    file.sync_all().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn start_ai_server(app: AppHandle) -> Result<(), String> {
+pub async fn start_ai_server(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+    let mut process_lock = state.llama_process.lock().await;
+    
+    // Check if already running — clean up dead processes
+    if let Some(child) = process_lock.as_mut() {
+        match child.try_wait() {
+            Ok(None) => {
+                // Still running
+                eprintln!("[Rust Local AI] Server is already running.");
+                return Ok(());
+            }
+            Ok(Some(status)) => {
+                // Process exited — clean up and restart
+                eprintln!("[Rust Local AI] Server exited with status: {}. Restarting...", status);
+                *process_lock = None;
+            }
+            Err(e) => {
+                eprintln!("[Rust Local AI] Failed to check process status: {}. Cleaning up...", e);
+                *process_lock = None;
+            }
+        }
+    }
+
     let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("qwen2.5-1.5b.gguf");
+    let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
     
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let mut bin_path = resource_dir.join("bin/llama-server-aarch64-apple-darwin");
@@ -468,6 +606,7 @@ pub fn start_ai_server(app: AppHandle) -> Result<(), String> {
     match child {
         Ok(c) => {
             eprintln!("[Rust Local AI] Server successfully spawned with PID: {}", c.id());
+            *process_lock = Some(c);
             Ok(())
         }
         Err(e) => {

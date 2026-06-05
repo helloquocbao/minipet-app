@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-const SETTINGS_WIDTH: f64 = 800.0;
-const SETTINGS_HEIGHT: f64 = 676.0;
+const SETTINGS_WIDTH: f64 = 1080.0;
+const SETTINGS_HEIGHT: f64 = 720.0;
 const LABEL: &str = "settings";
 
 pub fn open(app: &AppHandle) -> Result<(), String> {
@@ -19,6 +19,7 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
         .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
         .resizable(false)
         .maximizable(false)
+        .accept_first_mouse(true)
         .devtools(cfg!(debug_assertions))
         .build()
         .map_err(|e| e.to_string())?;

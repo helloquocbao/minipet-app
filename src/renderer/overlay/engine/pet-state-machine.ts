@@ -21,10 +21,10 @@ export class PetStateMachine {
 
   // Behavioral rules for automatic state transitions
   private rules: Partial<Record<PetState, StateRule>> = {
-    idle: { minDuration: 15000, maxDuration: 40000, transitions: ['sleep', 'walk'] },
+    idle: { minDuration: 15000, maxDuration: 40000, transitions: ['think', 'walk'] },
     walk: { minDuration: 5000, maxDuration: 20000, transitions: ['idle'] },
     run: { minDuration: 5000, maxDuration: 10000, transitions: ['idle'] }, 
-    sleep: { minDuration: 20000, maxDuration: 60000, transitions: ['idle'] },
+    think: { minDuration: 20000, maxDuration: 60000, transitions: ['idle'] },
   };
 
   constructor(controller: AnimationController, scale: number = 1.0, enableWalking: boolean = true) {
@@ -171,6 +171,13 @@ export class PetStateMachine {
    */
   resetPosition(): void {
     this.controller.resetPosition();
+  }
+
+  /**
+   * Clamps the pet to screen bounds after drag or teleport.
+   */
+  async clampToScreen(): Promise<void> {
+    await this.controller.clampToScreen();
   }
 
   /**

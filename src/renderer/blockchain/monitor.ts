@@ -1,4 +1,4 @@
-import { getJsonRpcFullnodeUrl } from '@mysten/sui/jsonRpc';
+import { SUI_CONFIG } from '../../shared/constants';
 
 export class SuiMonitor {
   private address: string = '';
@@ -6,7 +6,7 @@ export class SuiMonitor {
   private lastEventCursor: any = null;
   private lastBalance: string | null = null;
   private pollInterval: any = null;
-  private packageId: string = '0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c';
+  private packageId: string = SUI_CONFIG.PACKAGE_ID;
 
   // --- Multi-Agent State ---
   private flaggedNFTs: Set<string> = new Set();
@@ -16,26 +16,44 @@ export class SuiMonitor {
   private lastDeFiAlertTime: number = 0;
   private lastReminderAlertTime: number = 0;
 
+  // --- Agent Balance Monitor ---
+  private agentAddress: string = '';
+  private lastAgentBalance: string | null = null;
+
+  // --- Staggered Poll Counters ---
+  private pollTick: number = 0;
+
   constructor() {
-    this.init();
+    void this.init().catch(console.error);
   }
 
   private async init() {
     const api = (window as any).electronAPI;
     const settings = await api.getSettings();
-    this.updateConfig(settings);
+    await this.updateConfig(settings);
 
     // Listen for settings updates
     api.onSettingsUpdate((data: any) => {
-      this.updateConfig(data.settings);
+      void this.updateConfig(data.settings).catch(console.error);
     });
   }
 
-  private updateConfig(settings: any) {
+  private async updateConfig(settings: any) {
     this.address = settings.suiAddress || '';
     this.enabled = settings.suiEnabled || false;
 
-    console.log('[SuiMonitor] UpdateConfig:', { enabled: this.enabled, address: this.address });
+    if (settings.agentSecretKey) {
+      try {
+        const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+        const keypair = Ed25519Keypair.fromSecretKey(settings.agentSecretKey);
+        this.agentAddress = keypair.toSuiAddress();
+      } catch (err) {
+        console.error('[SuiMonitor] Failed to derive agent address:', err);
+        this.agentAddress = '';
+      }
+    } else {
+      this.agentAddress = '';
+    }
 
     if (this.enabled && this.address) {
       this.startPolling();
@@ -46,15 +64,14 @@ export class SuiMonitor {
 
   private startPolling() {
     if (this.pollInterval) return;
-    console.log('[SuiMonitor] Starting Multi-Agent blockchain polling for:', this.address);
     
     // Initial check
-    this.checkBlockchain();
+    void this.checkBlockchain().catch(console.error);
     
     this.pollInterval = setInterval(() => {
-      console.log('[SuiMonitor] Polling tick...');
-      this.checkBlockchain();
-    }, 7000); // Polling every 7 seconds
+      this.pollTick++;
+      void this.checkBlockchain().catch(console.error);
+    }, 10000); // Base interval: 10 seconds
   }
 
   public stopPolling() {
@@ -68,13 +85,33 @@ export class SuiMonitor {
     if (!this.address || !this.enabled) return;
 
     try {
-      await Promise.all([
-        this.checkEvents(),
-        this.checkBalance(),
-        this.checkPhishingNFTs(),
-        this.checkDeFiHealth(),
-        this.checkDailyReminders()
-      ]);
+      // Staggered polling: not all checks run every tick
+      const tasks: Promise<void>[] = [];
+
+      // Balance check: every tick (~10s)
+      tasks.push(this.checkBalance());
+
+      // Agent balance: every 2nd tick (~20s)
+      if (this.pollTick % 2 === 0) {
+        tasks.push(this.checkAgentBalance());
+      }
+
+      // Events: every 3rd tick (~30s)
+      if (this.pollTick % 3 === 0) {
+        tasks.push(this.checkEvents());
+      }
+
+      // Phishing NFT scan: every 6th tick (~60s)
+      if (this.pollTick % 6 === 0) {
+        tasks.push(this.checkPhishingNFTs());
+      }
+
+      // DeFi health: every 12th tick (~120s)
+      if (this.pollTick % 12 === 0) {
+        tasks.push(this.checkDeFiHealth());
+      }
+
+      await Promise.all(tasks);
     } catch (error) {
       console.error('[SuiMonitor] Polling error:', error);
     }
@@ -84,16 +121,14 @@ export class SuiMonitor {
   private async checkBalance() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const rpcUrl = SUI_CONFIG.RPC_URL;
       const response: any = await api.suiRpcCall('suix_getBalance', [this.address, '0x2::sui::SUI'], rpcUrl);
       
       if (response.error) throw new Error(response.error.message);
       const balance = response.result;
-      console.log('[SuiMonitor] Balance check success:', balance.totalBalance);
 
       if (this.lastBalance !== null && balance.totalBalance !== this.lastBalance) {
         const diff = BigInt(balance.totalBalance) - BigInt(this.lastBalance);
-        console.log('[SuiMonitor] Balance changed. Diff:', diff.toString());
         if (diff > 0n) {
           const amount = Number(diff) / 1_000_000_000;
           api.broadcastPetEvent('pet:say', {
@@ -114,13 +149,40 @@ export class SuiMonitor {
     }
   }
 
+  // --- Agent Balance Monitor ---
+  private async checkAgentBalance() {
+    if (!this.agentAddress || !this.enabled) return;
+    const api = (window as any).electronAPI;
+    try {
+      const rpcUrl = SUI_CONFIG.RPC_URL;
+      const response: any = await api.suiRpcCall('suix_getBalance', [this.agentAddress, '0x2::sui::SUI'], rpcUrl);
+      
+      if (response.error) throw new Error(response.error.message);
+      const balance = response.result;
+
+      if (this.lastAgentBalance !== null && balance.totalBalance !== this.lastAgentBalance) {
+        const diff = BigInt(balance.totalBalance) - BigInt(this.lastAgentBalance);
+        if (diff > 0n) {
+          const amount = Number(diff) / 1_000_000_000;
+          api.broadcastPetEvent('pet:say', {
+            text: `🤖 Yeah! Ví AI Agent vừa nhận thêm +${amount.toFixed(2)} SUI rồi nè sếp ơi! 🎉`,
+            priority: true
+          });
+        }
+      }
+      this.lastAgentBalance = balance.totalBalance;
+    } catch (e) {
+      console.error('[SuiMonitor] Agent Balance check failed', e);
+    }
+  }
+
 
 
   // --- Agent 3: Phishing NFT Guardian 🛡️ ---
   private async checkPhishingNFTs() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const rpcUrl = SUI_CONFIG.RPC_URL;
       const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
         this.address,
         {
@@ -182,7 +244,7 @@ export class SuiMonitor {
       if (now - this.lastDeFiAlertTime < 120000) return; // Cooldown: 120s
 
       // 2. DeFi Position check: look for Scallop/Navi smart contract objects in owned list
-      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const rpcUrl = SUI_CONFIG.RPC_URL;
       const response: any = await api.suiRpcCall('suix_getOwnedObjects', [
         this.address
       ], rpcUrl);
@@ -209,28 +271,11 @@ export class SuiMonitor {
     }
   }
 
-  // --- Agent 6: Daily Airdrop & Task Reminders ---
-  private async checkDailyReminders() {
-    const api = (window as any).electronAPI;
-    const now = Date.now();
-    // Daily check-in alerts (every 3 hours to be naturally engaging, or 10800000ms)
-    if (now - this.lastReminderAlertTime < 10800000) return;
-
-    this.lastReminderAlertTime = now;
-    const reminders = [
-      "🎁 Sếp ơi! Đã đến giờ đi claim Faucet và làm nhiệm vụ hằng ngày để tích điểm Airdrop rồi! Chiến thôi sếp! 🤤",
-      "🚀 Đừng quên kiểm tra các nhiệm vụ check-in Testnet hôm nay để không bỏ lỡ điểm thưởng airdrop nào nha boss! 🐾",
-      "💡 Tích tiểu thành đại! Mở ví ra và check-in các dApp DeFi để nâng cao thứ hạng ví (Wallet Ranking) đi sếp ơi! 🏆"
-    ];
-    const picked = reminders[Math.floor(Math.random() * reminders.length)];
-    api.broadcastPetEvent('pet:say', { text: picked, priority: true });
-  }
-
   // --- Legacy Event check for NFT contract ---
   private async checkEvents() {
     const api = (window as any).electronAPI;
     try {
-      const rpcUrl = getJsonRpcFullnodeUrl('testnet');
+      const rpcUrl = SUI_CONFIG.RPC_URL;
       const response: any = await api.suiRpcCall('suix_queryEvents', [
         {
           MoveModule: {
@@ -247,7 +292,6 @@ export class SuiMonitor {
       const data = response.result.data || [];
 
       if (data && data.length > 0) {
-        console.log(`[SuiMonitor] Processing ${data.length} potential new events...`);
         for (const event of data) {
           if (this.lastEventCursor && 
               (event.id.txDigest === this.lastEventCursor.txDigest && event.id.eventSeq === this.lastEventCursor.eventSeq)) {

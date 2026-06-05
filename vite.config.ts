@@ -19,6 +19,13 @@ export default defineConfig({
         settings: resolve(__dirname, 'src/renderer/settings/index.html'),
         speech: resolve(__dirname, 'src/renderer/speech/index.html'),
       },
+      output: {
+        manualChunks(id) {
+          if (id.includes('@mysten/sui')) return 'sui-sdk';
+          if (id.includes('@cetusprotocol')) return 'cetus-sdk';
+          if (id.includes('@google/generative-ai')) return 'google-ai';
+        },
+      },
     },
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,

@@ -3,13 +3,21 @@ export type PetState =
   | 'idle'
   | 'walk'
   | 'run'
-  | 'jump'
+  | 'stun'
   | 'fall'
-  | 'drag'
-  | 'sleep'
+  | 'angry'
+  | 'think'
   | 'notify'
   | 'happy'
-  | 'eat';
+  | 'eat'
+  | 'bonk'
+  | 'save_money'
+  | 'drag'
+  | 'jump'
+  | 'sleep'
+  | 'greet'   // row 3: chào hỏi (thay thế 'happy' trong các context chào hỏi)
+  | 'sad'     // row 4: buồn/lỗi (thay thế 'stun' trong context buồn)
+  | 'dazed';  // row 5: bị kéo/choáng (thay thế 'drag' và 'jump' trong drag/send_coin)
 
 /** Cấu hình animation cho 1 state */
 export interface AnimationConfig {

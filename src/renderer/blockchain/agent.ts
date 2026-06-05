@@ -1,7 +1,8 @@
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { SUI_CONFIG } from '../../shared/constants';
 
 export class SecurityAgent {
-  private rpcUrl: string = 'https://fullnode.testnet.sui.io:443'; 
+  private rpcUrl: string = SUI_CONFIG.RPC_URL;
   private unlistenCb: UnlistenFn | null = null;
   
   // Từ điển các câu nói ngẫu nhiên
@@ -40,7 +41,7 @@ export class SecurityAgent {
   };
 
   constructor() {
-    console.log('[SecurityAgent] Initialized Event-driven On-chain Analysis Agent');
+    // Initialized Event-driven On-chain Analysis Agent
   }
 
   private pickRandom(arr: string[]): string {
@@ -48,10 +49,9 @@ export class SecurityAgent {
   }
 
   public async start() {
-    console.log('[SecurityAgent] Listening for clipboard events...');
     this.unlistenCb = await listen('clipboard://sui-address-copied', (event: any) => {
       const address = event.payload as string;
-      this.handleNewAddress(address);
+      void this.handleNewAddress(address).catch(console.error);
     });
   }
 
@@ -59,7 +59,6 @@ export class SecurityAgent {
     if (this.unlistenCb) {
       this.unlistenCb();
       this.unlistenCb = null;
-      console.log('[SecurityAgent] Stopped listening.');
     }
   }
 
@@ -98,7 +97,7 @@ export class SecurityAgent {
     api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.thinking), priority: true });
 
     // Thêm delay giả lập chút xíu để tạo cảm giác "đang check"
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise<void>(resolve => { setTimeout(resolve, 1500); });
 
     if (trimmed.includes('::')) {
       await this.analyzeCoinType(trimmed);

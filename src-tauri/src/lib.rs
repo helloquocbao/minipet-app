@@ -16,6 +16,8 @@ pub struct AppState {
     pub pomodoro: Mutex<PomodoroManager>,
     pub pomo_state: Arc<Mutex<PomodoroState>>,
     pub last_clipboard: Mutex<String>,
+    pub reqwest_client: reqwest::Client,
+    pub llama_process: Mutex<Option<std::process::Child>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -61,11 +63,18 @@ pub fn run() {
                 finished: false,
             }));
 
+            let reqwest_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default();
+
             let state = AppState {
                 pet_manager: Mutex::new(pet_manager),
                 pomodoro: Mutex::new(pomodoro),
                 pomo_state,
                 last_clipboard: Mutex::new(String::new()),
+                reqwest_client,
+                llama_process: Mutex::new(None),
             };
 
             app.manage(state);
@@ -119,10 +128,10 @@ pub fn run() {
             let cb_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     if let Ok(text) = cb_handle.clipboard().read_text() {
-                        // Tối ưu: Bỏ qua nếu text quá dài (> 500 ký tự) để tránh tốn CPU/RAM
-                        if text.len() > 500 {
+                        // Skip if text is empty or too long (> 500 chars) to save CPU/RAM
+                        if text.is_empty() || text.len() > 500 {
                             continue;
                         }
 
@@ -165,7 +174,7 @@ pub fn run() {
             commands::sui_rpc_call,
             commands::eat_files,
             commands::import_pet,
-            commands::delete_pet,
+
             commands::pomo_get_state,
             commands::pomo_start,
             commands::pomo_pause,
@@ -182,12 +191,43 @@ pub fn run() {
             commands::check_model_exists,
             commands::download_model,
             commands::start_ai_server,
+            commands::generate_agent_keypair,
+            commands::re_raise_window,
+            commands::get_monitor_work_area,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |app_handle, event| {
-            if let tauri::RunEvent::Reopen { .. } = event {
+        .run(move |app_handle, event| match event {
+            tauri::RunEvent::Reopen { .. } => {
                 let _ = crate::window::settings::open(app_handle);
+            }            tauri::RunEvent::ExitRequested { .. } => {
+                let state = app_handle.state::<AppState>();
+                tauri::async_runtime::block_on(async {
+                    // Use timeout to prevent deadlocks during exit
+                    let save_future = async {
+                        if let Ok(mut mgr) = tokio::time::timeout(
+                            std::time::Duration::from_secs(2),
+                            state.pet_manager.lock()
+                        ).await {
+                            if mgr.is_dirty {
+                                mgr.save_settings().await;
+                            }
+                        }
+                    };
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), save_future).await;
+
+                    // Kill llama process
+                    if let Ok(mut process_lock) = tokio::time::timeout(
+                        std::time::Duration::from_secs(1),
+                        state.llama_process.lock()
+                    ).await {
+                        if let Some(mut child) = process_lock.take() {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                        }
+                    }
+                });
             }
+            _ => {}
         });
 }

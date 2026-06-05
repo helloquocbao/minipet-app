@@ -3,247 +3,309 @@
   <head>
     <meta charset="UTF-8" />
     <title>MiniPet Settings</title>
+    <script>
+      // Apply saved theme before first paint to avoid flash
+      const saved = localStorage.getItem('minipet-theme') ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', saved);
+    </script>
     <link rel="stylesheet" href="settings.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div class="settings-container">
+    <div class="app">
       <div id="toast-container" class="toast-container"></div>
-      <header class="settings-header">
-        <h1 data-i18n="settingsTitle">MiniPet Settings</h1>
-        <p class="subtitle" data-i18n="subtitle">Customize your desktop companion</p>
-      </header>
 
-      <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="pets">
-          <span class="tab-icon">🐾</span>
-          <span data-i18n="activePets">Pets</span>
-        </button>
-        <button class="tab-btn" data-tab="config">
-          <span class="tab-icon">⚙️</span>
-          <span data-i18n="preferences">Configuration</span>
-        </button>
-        <button class="tab-btn" data-tab="ai-web3">
-          <span class="tab-icon">🤖</span>
-          <span data-i18n="aiWeb3">AI & Web3</span>
-        </button>
-      </nav>
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <span class="brand-name">MiniPet</span>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-tab="pets">
+            <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="3"/><path d="M2 14c0-3.314 2.686-6 6-6s6 2.686 6 6"/></svg>
+            <span data-i18n="activePets">Thú cưng</span>
+          </button>
+          <button class="nav-item" data-tab="config">
+            <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+            <span data-i18n="preferences">Tùy chọn</span>
+          </button>
+          <button class="nav-item" data-tab="ai-web3">
+            <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 14h6M8 12v2"/><path d="M5 7h6M5 9.5h3"/></svg>
+            <span data-i18n="aiWeb3">AI & Web3</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="ping-pet-btn" class="ping-btn">
+            <span data-i18n="pingPet">Ping</span>
+          </button>
+          <button id="theme-toggle-btn" class="theme-btn" title="Toggle light/dark mode">
+            <span class="theme-icon">🌙</span>
+          </button>
+        </div>
+      </aside>
 
-      <div class="tab-content">
-        <!-- Tab 1: Pet Management -->
-        <div id="tab-pets" class="tab-panel active">
-          <!-- Active Pets (Multi-Pet Management) -->
-          <section class="section">
-            <h2 data-i18n="activePets">Active Pets</h2>
-            <div id="active-pets-list" class="active-pets-list">
-              <!-- Populated by JS -->
-            </div>
-          </section>
-
-          <!-- Pet Selection -->
-          <section class="section">
-            <div class="section-header-row">
+      <!-- Main Content -->
+      <main class="main-content">
+        <div class="tab-content">
+          <!-- Tab 1: Pet Management -->
+          <div id="tab-pets" class="tab-panel active">
+            <div class="panel-header">
               <h2 data-i18n="choosePet">Choose Your Pet</h2>
             </div>
-            <div id="pet-gallery" class="pet-gallery">
-              <!-- Populated by JS -->
+            <div id="active-pets-list" class="active-pets-list"></div>
+            <div id="pet-gallery" class="pet-gallery"></div>
+          </div>
+
+          <!-- Tab 2: Configuration -->
+          <div id="tab-config" class="tab-panel">
+            <div class="panel-header">
+              <h2 data-i18n="preferences">Preferences</h2>
+              <p class="panel-sub" data-i18n="configSubtitle">Customize your pet behavior and productivity tools.</p>
             </div>
-          </section>
+
+            <!-- Section: Appearance -->
+            <section class="settings-section">
+              <h3 class="section-title" data-i18n="appearanceSection">Appearance</h3>
+              <div class="row-list">
+                <div class="row">
+                  <div class="row-info">
+                    <span class="row-label" data-i18n="language">Language</span>
+                    <span class="row-desc" data-i18n="languageDesc">Interface and pet speech language</span>
+                  </div>
+                  <select id="language-select" class="select-md">
+                    <option value="en">English</option>
+                    <option value="vi">Tiếng Việt</option>
+                    <option value="fr">Français</option>
+                    <option value="zh">中文</option>
+                    <option value="it">Italiano</option>
+                    <option value="ko">한국어</option>
+                  </select>
+                </div>
+                <div class="row">
+                  <div class="row-info">
+                    <span class="row-label" data-i18n="petScale">Pet size</span>
+                    <span class="row-desc" data-i18n="petScaleDesc">Scale the pet from small to large</span>
+                  </div>
+                  <div class="range-control">
+                    <input type="range" id="scale-range" min="0.3" max="2" step="0.1" value="2" />
+                    <span id="scale-value" class="range-val">2.0×</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Section: Pomodoro -->
+            <section class="settings-section">
+              <div class="section-head">
+                <div>
+                  <h3 class="section-title" data-i18n="pomodoroSection">Pomodoro timer</h3>
+                  <p class="section-desc" data-i18n="pomodoroDesc">Focus sessions with auto break reminders.</p>
+                </div>
+                <span id="pomo-status" class="pomo-badge" data-mode="idle" data-i18n="statusIdle">Ready</span>
+              </div>
+
+              <div class="pomo-card-v2">
+                <!-- Left: Timer display -->
+                <div class="pomo-timer-col">
+                  <div class="pomo-ring-wrap">
+                    <svg class="pomo-ring" viewBox="0 0 120 120">
+                      <circle class="pomo-ring-bg" cx="60" cy="60" r="52"/>
+                      <circle class="pomo-ring-fill" id="pomo-ring-fill" cx="60" cy="60" r="52"
+                        stroke-dasharray="326.7" stroke-dashoffset="0"/>
+                    </svg>
+                    <div class="pomo-ring-inner">
+                      <div class="pomo-time" id="pomo-display">25:00</div>
+                      <div class="pomo-mode-label" id="pomo-mode-label">Focus</div>
+                    </div>
+                  </div>
+                  <div class="pomo-controls">
+                    <button id="pomo-reset-btn" class="pomo-ctrl-btn" data-tooltip-i18n="resetBtn">
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15"><path d="M2.5 8A5.5 5.5 0 1 0 4 4.5"/><path d="M2 2v3h3"/></svg>
+                    </button>
+
+                    <button id="pomo-start-btn" class="pomo-play-btn">
+                      <svg id="pomo-play-icon" viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><path d="M5 3.5l8 4.5-8 4.5V3.5z"/></svg>
+                      <svg id="pomo-pause-icon" viewBox="0 0 16 16" fill="currentColor" width="14" height="14" style="display:none"><rect x="3" y="2" width="4" height="12" rx="1"/><rect x="9" y="2" width="4" height="12" rx="1"/></svg>
+                      <span id="pomo-start-label" data-i18n="startBtn">Start</span>
+                    </button>
+
+                    <button id="pomo-standard-btn" class="pomo-ctrl-btn" data-tooltip-i18n="restoreBtn">
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Right: Config -->
+                <div class="pomo-config-col">
+                  <div class="pomo-config-row">
+                    <div class="pomo-config-item">
+                      <span class="pomo-config-label" data-i18n="focus">Focus</span>
+                      <div class="pomo-stepper">
+                        <button class="stepper-btn" data-target="pomo-focus-time" data-delta="-1">−</button>
+                        <div class="stepper-val-wrap">
+                          <input type="number" id="pomo-focus-time" value="25" min="1" max="120" />
+                          <span class="stepper-unit" data-i18n="minuteUnit">min</span>
+                        </div>
+                        <button class="stepper-btn" data-target="pomo-focus-time" data-delta="1">+</button>
+                      </div>
+                    </div>
+                    <div class="pomo-config-divider"></div>
+                    <div class="pomo-config-item">
+                      <span class="pomo-config-label" data-i18n="break">Break</span>
+                      <div class="pomo-stepper">
+                        <button class="stepper-btn" data-target="pomo-break-time" data-delta="-1">−</button>
+                        <div class="stepper-val-wrap">
+                          <input type="number" id="pomo-break-time" value="5" min="1" max="60" />
+                          <span class="stepper-unit" data-i18n="minuteUnit">min</span>
+                        </div>
+                        <button class="stepper-btn" data-target="pomo-break-time" data-delta="1">+</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="pomo-hint" data-i18n="pomoHint">Pet reminds you when each session ends. Click the pet to stop an alarm.</p>
+                </div>
+              </div>
+
+              <!-- Hidden compat buttons for JS hooks -->
+              <button id="pomo-pause-btn" style="display:none;"></button>
+            </section>
+
+            <!-- Section: Behavior -->
+            <section class="settings-section">
+              <h3 class="section-title" data-i18n="behaviorSection">Behavior</h3>
+              <div class="row-list">
+                <div class="row">
+                  <div class="row-info">
+                    <span class="row-label" data-i18n="enableWalking">Walking</span>
+                    <span class="row-desc" data-i18n="walkingDescShort">Pet walks around your screen autonomously</span>
+                  </div>
+                  <label class="toggle">
+                    <input type="checkbox" id="walking-toggle" checked />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+                <div class="row">
+                  <div class="row-info">
+                    <span class="row-label" data-i18n="launchAtStartup">Launch at startup</span>
+                    <span class="row-desc" data-i18n="startupDescShort">Open MiniPet automatically when you log in</span>
+                  </div>
+                  <label class="toggle">
+                    <input type="checkbox" id="startup-toggle" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Tab 3: AI & Web3 -->
+          <div id="tab-ai-web3" class="tab-panel">
+            <div class="panel-header">
+              <div class="panel-head-row">
+                <div>
+                  <h2 data-i18n="aiWeb3Settings">AI & Web3</h2>
+                  <p class="panel-sub">Connect your SUI wallet, configure the on-device AI agent, and manage transfer whitelists.</p>
+                </div>
+                <div class="header-status">
+                  <span class="status-pill" id="ai-status" data-state="off">AI offline</span>
+                  <span class="status-pill" id="sui-status" data-state="off">Disconnected</span>
+                  <button id="refresh-blockchain-btn" class="icon-btn-md" title="Refresh">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Wallet -->
+            <section class="settings-section">
+              <div class="section-head">
+                <div>
+                  <h3 class="section-title">SUI wallet</h3>
+                  <p class="section-desc">Your main wallet address. Pet activity links to this account.</p>
+                </div>
+                <span class="balance-tag" id="sui-balance-display">0.000 SUI</span>
+              </div>
+              <div class="form-stack">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="suiAddress">Wallet address</label>
+                  <div class="input-group">
+                    <input type="text" id="sui-address-input" class="input-mono" placeholder="0x..." />
+                    <button id="copy-address-btn" class="input-action" title="Copy">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="action-bar">
+                  <a id="explorer-link" href="#" class="link-btn" style="display:none;">View on explorer</a>
+                  <div class="action-bar-right">
+                    <button id="disconnect-wallet-btn" class="btn-danger-ghost" style="display:none;">Disconnect</button>
+                    <button id="sync-browser-btn" class="btn-primary">Sync from browser</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- AI Agent -->
+            <section class="settings-section">
+              <div class="section-head">
+                <div>
+                  <h3 class="section-title">AI agent</h3>
+                  <p class="section-desc">A local model running on your device controls a separate burner wallet.</p>
+                </div>
+              </div>
+              <div class="form-stack">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label">Wallet mode</label>
+                    <div class="segmented">
+                      <label><input type="radio" name="walletMode" value="agent" id="mode-agent" checked><span>Burner</span></label>
+                      <label id="mode-zklogin-label"><input type="radio" name="walletMode" value="zklogin" id="mode-zklogin" disabled><span id="mode-zklogin-text">zkLogin</span></label>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" data-i18n="aiModelLabel">AI model</label>
+                    <select class="select-md">
+                      <option value="qwen0.5b">Qwen 0.5B · Local</option>
+                      <option value="gemini-flash" disabled>Gemini Flash · Coming soon</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="agentAddress">Agent address</label>
+                  <div class="input-group">
+                    <input type="text" id="agent-address-input" class="input-mono" readonly placeholder="Generating..." />
+                    <button id="copy-agent-address-btn" class="input-action" title="Copy">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <p class="callout">Local AI runs offline. Top up the agent wallet with SUI to let your pet send transactions on your behalf.</p>
+              </div>
+            </section>
+
+            <!-- Fast Transfer -->
+            <section class="settings-section">
+              <div class="section-head">
+                <div>
+                  <h3 class="section-title">Fast transfer whitelist</h3>
+                  <p class="section-desc">Saved aliases the agent can transfer to without confirmation.</p>
+                </div>
+              </div>
+              <ul id="fast-transfer-list" class="whitelist-list"></ul>
+              <div class="whitelist-form">
+                <input type="text" id="whitelist-alias-input" class="input-md" placeholder="Alias (e.g. Mom)" />
+                <input type="text" id="whitelist-address-input" class="input-md input-mono" placeholder="0x..." />
+                <button id="add-whitelist-btn" class="btn-primary">Add</button>
+              </div>
+            </section>
+          </div>
         </div>
-
-        <!-- Tab 2: Configuration -->
-        <div id="tab-config" class="tab-panel">
-          <!-- Pomodoro Timer -->
-          <section class="section">
-            <div class="section-header-row">
-              <h2 data-i18n="pomodoroTimer">Pomodoro Timer</h2>
-              <div id="pomo-status" class="status-tag">Ready</div>
-            </div>
-            <div class="pomo-container">
-              <div class="pomo-settings">
-                <div class="pomo-input-group">
-                  <label data-i18n="focus">Focus (min)</label>
-                  <input type="number" id="pomo-focus-time" value="25" min="1" max="120" />
-                </div>
-                <div class="pomo-input-group">
-                  <label data-i18n="break">Break (min)</label>
-                  <input type="number" id="pomo-break-time" value="5" min="1" max="60" />
-                </div>
-              </div>
-              <div class="pomo-timer" id="pomo-display">25:00</div>
-              <div class="pomo-controls">
-                <button id="pomo-start-btn" class="primary-btn" data-i18n="start">Start</button>
-                <button id="pomo-pause-btn" class="secondary-btn" style="display: none;" data-i18n="pause">Pause</button>
-                <button id="pomo-reset-btn" class="secondary-btn" data-i18n="reset">Reset</button>
-                <button id="pomo-standard-btn" class="secondary-btn" data-i18n="standard">Default</button>
-              </div>
-            </div>
-          </section>
-
-          <!-- Preferences -->
-          <section class="section">
-            <h2 data-i18n="preferences">Preferences</h2>
-            <div class="settings-form">
-              <!-- Language Selection -->
-              <div class="setting-item">
-                <label data-i18n="language">Language</label>
-                <select id="language-select" class="select-input">
-                  <option value="en">English</option>
-                  <option value="vi">Tiếng Việt</option>
-                  <option value="fr">Français</option>
-                  <option value="zh">中文</option>
-                  <option value="it">Italiano</option>
-                  <option value="ko">한국어</option>
-                </select>
-              </div>
-
-              <!-- Scale -->
-              <div class="setting-item">
-                <label data-i18n="petScale">Pet Scale</label>
-                <div class="range-container">
-                  <input type="range" id="scale-range" min="0.5" max="2" step="0.1" value="2" />
-                  <span id="scale-value">2.0x</span>
-                </div>
-              </div>
-
-              <!-- Enable Walking -->
-              <div class="setting-item">
-                <div class="setting-item-column">
-                  <label data-i18n="enableWalking">Enable Walking</label>
-                  <p class="setting-hint" data-i18n="walkingHint">Allow your pet to wander around the screen.</p>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="walking-toggle" checked />
-                  <span class="slider round"></span>
-                </label>
-              </div>
-
-              <!-- Launch at Startup -->
-              <div class="setting-item">
-                <div class="setting-item-column">
-                  <label data-i18n="launchAtStartup">Launch at Startup</label>
-                  <p class="setting-hint" data-i18n="startupHint">Open MiniPet automatically when you log in.</p>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="startup-toggle" />
-                  <span class="slider round"></span>
-                </label>
-              </div>
-
-              <!-- Interaction -->
-               <div class="setting-item">
-                 <label data-i18n="interaction">Interaction</label>
-                 <button id="ping-pet-btn" class="secondary-btn" data-i18n="pingPet">Ping Pet</button>
-               </div>
-             </div>
-           </section>
-         </div>
-
-        <!-- Tab 3: AI & Web3 Combined -->
-        <div id="tab-ai-web3" class="tab-panel">
-          <section class="section">
-            <div class="section-header-row">
-              <h2 data-i18n="aiWeb3Settings">AI & Web3 Settings</h2>
-              <div class="header-actions">
-                <button id="refresh-blockchain-btn" class="refresh-btn" title="Refresh">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>
-                  </svg>
-                </button>
-                <div class="status-tag ai" id="ai-status">Inactive</div>
-                <div class="status-tag sui" id="sui-status">Disconnected</div>
-              </div>
-            </div>
-
-            <div class="settings-stacked-layout">
-              <!-- SUI Integration Card (TRÊN) -->
-              <div class="blockchain-card compact-card">
-                <div class="card-header-horizontal">
-                  <div class="card-title-row">
-                    <span class="card-icon" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">💧</span>
-                    <h3 data-i18n="suiIntegration">SUI Integration</h3>
-                  </div>
-                  <div class="blockchain-stats-horizontal">
-                    <span class="stat-label">Mạng: <strong class="stat-value" style="color: #6badde;">Testnet</strong></span>
-                    <span class="stat-label">Số dư: <strong id="sui-balance-display" class="stat-value">0 SUI</strong></span>
-                  </div>
-                </div>
-                <div class="card-body-horizontal">
-                  <div class="setting-input-row">
-                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
-                      <label data-i18n="suiAddress" style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); letter-spacing: 0.5px;">Your SUI Wallet Address</label>
-                      <div class="input-with-icon">
-                        <span class="input-icon">👤</span>
-                        <input type="text" id="sui-address-input" class="text-input" placeholder="Dán địa chỉ ví hoặc đồng bộ từ trình duyệt..." />
-                      </div>
-                    </div>
-                    <div class="address-actions-horizontal">
-                      <a id="explorer-link" href="#" target="_blank" class="explorer-link-btn" title="View on Explorer">🌐 Explorer</a>
-                      <button id="sync-browser-btn" class="sync-btn-gradient">🔑 Sync with Browser</button>
-                      <button id="disconnect-wallet-btn" class="disconnect-btn-red" style="display: none;">❌ Disconnect</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- AI Agent Configuration Card (DƯỚI) -->
-              <div class="blockchain-card compact-card">
-                <div class="card-header-horizontal">
-                  <div class="card-title-row">
-                    <span class="card-icon" style="background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%);">🤖</span>
-                    <h3 data-i18n="aiCompanion">AI Chat Companion</h3>
-                  </div>
-                </div>
-                <div class="card-body-horizontal">
-                  <div class="setting-input-row">
-                    <div class="input-group-horizontal" style="flex: 1.2;">
-                      <label data-i18n="agentAddress">AI Agent Wallet (Burner Wallet)</label>
-                      <div class="input-with-icon" style="width: 100%;">
-                        <span class="input-icon">👤</span>
-                        <input type="text" id="agent-address-input" class="text-input" readonly placeholder="Generating..." />
-                      </div>
-                    </div>
-                    <div class="input-group-horizontal" style="flex: 1;">
-                      <label data-i18n="aiModelLabel">Mô hình AI</label>
-                      <div class="input-with-icon select-wrapper" style="width: 100%;">
-                        <span class="input-icon">🧠</span>
-                        <select class="select-input text-input" style="color: #4ade80; border-color: #3f3f46; background-color: #1a1b2e; cursor: pointer; padding-left: 40px; width: 100%;">
-                          <option value="qwen0.5b" data-i18n="modelQwenActive">Qwen 2.5 0.5B (Local) - Active</option>
-                          <option value="gemini-flash" disabled style="color: #71717a;" data-i18n="modelGeminiFlash">Gemini 1.5 Flash (Coming)</option>
-                          <option value="gemini-pro" disabled style="color: #71717a;" data-i18n="modelGeminiPro">Gemini 1.5 Pro (Coming)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="hint-row">
-                    <p class="setting-hint">🧠 Offline & bảo mật qua localhost:8080. Nạp SUI vào ví Agent để Pet thay bạn giao dịch.</p>
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Fast Transfer Whitelist Card -->
-              <div class="blockchain-card compact-card">
-                <div class="card-header-horizontal">
-                  <div class="card-title-row">
-                    <span class="card-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">⚡</span>
-                    <h3 data-i18n="fastTransferWhitelist">Fast Transfer Whitelist</h3>
-                  </div>
-                </div>
-                <div class="card-body-horizontal" style="flex-direction: column;">
-                  <ul id="fast-transfer-list" class="whitelist-container" style="list-style: none; padding: 0; margin: 0 0 8px 0; max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <!-- Populated by JS -->
-                  </ul>
-                  <p class="setting-hint" style="margin: 0; text-align: center;">💬 Talk to your pet to add or remove addresses from this list.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
+      </main>
     </div>
 
-    <script type="module" src="settings.ts"></script>
+    <script type="module" src="settings-entry.ts"></script>
   </body>
 </html>

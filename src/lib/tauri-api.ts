@@ -70,7 +70,7 @@ export const onPomoTick = (cb: (data: any) => void): Promise<UnlistenFn> =>
   listen('pomo:tick', (e) => cb(e.payload));
 
 export const onPetSay = (cb: (payload: any) => Promise<void> | void): Promise<UnlistenFn> =>
-  listen('pet:say', (e) => cb(e.payload));
+  listen('pet:say', (e) => { void (cb(e.payload) as Promise<void> | undefined); });
 
 export const onPetStartAlarm = (cb: () => void): Promise<UnlistenFn> =>
   listen('pet:start-alarm', () => cb());
@@ -92,3 +92,6 @@ export const broadcastPetEvent = (event: string, payload: any = {}) =>
   invoke('broadcast_pet_event', { event, payload });
 
 export const emitSpeaking = () => emit('pet:speaking');
+
+// --- Agent Keypair ---
+export const generateAgentKeypair = () => invoke<string>('generate_agent_keypair');

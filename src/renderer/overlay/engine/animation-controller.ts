@@ -152,27 +152,27 @@ export class AnimationController {
           const winY = pos.y;
 
           const winW = window.innerWidth;
-          const bounds = (window.electronAPI as any).getMonitorBounds?.() || { x: 0, width: window.screen.availWidth };
+          const winH = window.innerHeight;
+          const bounds = (window.electronAPI as any).getMonitorBounds?.() || { x: 0, y: 0, width: window.screen.availWidth, height: window.screen.availHeight };
           const minX = bounds.x;
           const maxX = bounds.x + bounds.width;
+          const minY = bounds.y ?? 0;
+          const maxY = minY + (bounds.height ?? window.screen.availHeight);
 
           if (this.logicalX === null) this.logicalX = winX;
           const lx = this.logicalX as number;
 
-          // Safety Check: If pet is spawned completely out of bounds (X or Y), teleport it back
-          const outOfX = lx > maxX || lx + winW < minX;
-          const outOfY = winY < -100 || winY > window.screen.availHeight + 100;
-          
+          // Teleport back if completely off-screen
+          const outOfX = lx + winW < minX || lx > maxX;
+          const outOfY = winY + winH < minY || winY > maxY;
+
           if (outOfX || outOfY) {
             const newX = minX + (bounds.width - winW) / 2;
-            const newY = window.screen.availHeight / 2;
-            const deltaX = newX - lx;
-            const deltaY = newY - winY;
-            
-            window.electronAPI.moveWindow(deltaX, deltaY);
+            const newY = maxY - winH; // bottom of work area
+            window.electronAPI.moveWindow(newX - lx, newY - winY);
             this.logicalX = newX;
             this.accumulatedX = 0;
-            return; // Skip the rest of the movement frame
+            return;
           }
 
           // Multi-Pet: Handle chasing behavior
@@ -230,6 +230,12 @@ export class AnimationController {
           return;
         }
       }
+    } else {
+      // Between frame advances: redraw the current frame every rAF to keep
+      // the canvas backing store alive on macOS WKWebView. Without this,
+      // slow animations (idle @ 4fps = 250ms gap) cause the compositor to
+      // discard the canvas texture, producing a blank flash.
+      this.draw();
     }
 
     this.animationId = requestAnimationFrame(this.loop);
