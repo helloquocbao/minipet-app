@@ -29,7 +29,7 @@ export function setupElectronShim() {
       cachedMonitorH = wa.height;
     } catch {
       // fallback: use CSS screen dimensions
-      const m = await win.currentMonitor();
+      const m = await (win as any).currentMonitor();
       if (m) {
         const dpr = window.devicePixelRatio || 1;
         cachedMonitorX = m.position.x / dpr;

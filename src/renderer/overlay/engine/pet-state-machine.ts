@@ -177,7 +177,9 @@ export class PetStateMachine {
    * Clamps the pet to screen bounds after drag or teleport.
    */
   async clampToScreen(): Promise<void> {
-    await this.controller.clampToScreen();
+    if ((this.controller as any).clampToScreen) {
+      await (this.controller as any).clampToScreen();
+    }
   }
 
   /**

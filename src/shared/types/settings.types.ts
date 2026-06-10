@@ -42,6 +42,8 @@ export interface UserSettings {
   suiEnabled: boolean;
   geminiApiKey: string;
   aiEnabled: boolean;
+  fastTransferWallets?: { alias: string; address: string }[];
+  agentAddress?: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

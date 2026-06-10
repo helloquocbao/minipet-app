@@ -535,6 +535,7 @@ function setupGlobalEventListeners() {
 
   addWhitelistBtn?.addEventListener('click', () => {
     void (async () => {
+    if (!currentSettings) return;
     const alias = whitelistAliasInput.value.trim();
     const address = whitelistAddressInput.value.trim();
 
@@ -710,6 +711,7 @@ function renderFastTransferList(settings: any) {
   container.querySelectorAll('.remove-whitelist-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       void (async () => {
+      if (!currentSettings) return;
       const idxStr = (e.currentTarget as HTMLElement).getAttribute('data-index');
       if (idxStr === null) return;
       const idx = parseInt(idxStr);
@@ -719,6 +721,7 @@ function renderFastTransferList(settings: any) {
       
       const api = (window as any).electronAPI;
       await api.updateSettings({ fastTransferWallets: newList });
+      // eslint-disable-next-line require-atomic-updates
       currentSettings.fastTransferWallets = newList;
       renderFastTransferList(currentSettings);
       })();
