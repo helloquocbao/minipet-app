@@ -189,6 +189,7 @@ pub fn run() {
             commands::get_browser_tab,
             commands::get_browser_url,
             commands::check_model_exists,
+            commands::delete_model,
             commands::download_model,
             commands::start_ai_server,
             commands::generate_agent_keypair,

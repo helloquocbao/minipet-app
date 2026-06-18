@@ -24,15 +24,39 @@ let isChatActive = false;
 
 // Listen for speech updates
 void listen(`update-speech-${instanceId}`, (event: any) => {
-  const { text, visible } = event.payload;
+  const { text, visible, buttons } = event.payload;
+  const actionBtns = document.getElementById('action-buttons');
   
   if (visible) {
     // Don't overwrite chat content with regular speech
     if (isChatActive) return;
     speechText.textContent = text;
     bubble.classList.add('visible');
+
+    // Handle action buttons
+    if (buttons && Array.isArray(buttons) && buttons.length > 0 && actionBtns) {
+      actionBtns.innerHTML = '';
+      actionBtns.style.display = 'flex';
+      void win.setIgnoreCursorEvents(false);
+      for (const btn of buttons) {
+        const el = document.createElement('button');
+        el.textContent = btn.label;
+        el.className = btn.style === 'primary' ? 'btn-yes' : 'btn-no';
+        el.addEventListener('click', () => {
+          void emit(`speech-button-${instanceId}`, { action: btn.action });
+          actionBtns.style.display = 'none';
+          void win.setIgnoreCursorEvents(true);
+        });
+        actionBtns.appendChild(el);
+      }
+    } else if (actionBtns) {
+      actionBtns.style.display = 'none';
+      if (!isChatActive) void win.setIgnoreCursorEvents(true);
+    }
   } else if (!isChatActive) {
     bubble.classList.remove('visible');
+    if (actionBtns) actionBtns.style.display = 'none';
+    void win.setIgnoreCursorEvents(true);
   }
 });
 

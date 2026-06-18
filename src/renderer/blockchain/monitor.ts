@@ -1,8 +1,10 @@
 import { SUI_CONFIG } from '../../shared/constants';
+import { translations, Language } from '../../shared/i18n/translations';
 
 export class SuiMonitor {
   private address: string = '';
   private enabled: boolean = false;
+  private lang: string = 'en';
   private lastEventCursor: any = null;
   private lastBalance: string | null = null;
   private pollInterval: any = null;
@@ -16,9 +18,7 @@ export class SuiMonitor {
   private lastDeFiAlertTime: number = 0;
   private lastReminderAlertTime: number = 0;
 
-  // --- Agent Balance Monitor ---
-  private agentAddress: string = '';
-  private lastAgentBalance: string | null = null;
+
 
   // --- Staggered Poll Counters ---
   private pollTick: number = 0;
@@ -41,19 +41,7 @@ export class SuiMonitor {
   private async updateConfig(settings: any) {
     this.address = settings.suiAddress || '';
     this.enabled = settings.suiEnabled || false;
-
-    if (settings.agentSecretKey) {
-      try {
-        const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-        const keypair = Ed25519Keypair.fromSecretKey(settings.agentSecretKey);
-        this.agentAddress = keypair.toSuiAddress();
-      } catch (err) {
-        console.error('[SuiMonitor] Failed to derive agent address:', err);
-        this.agentAddress = '';
-      }
-    } else {
-      this.agentAddress = '';
-    }
+    this.lang = settings.language || 'en';
 
     if (this.enabled && this.address) {
       this.startPolling();
@@ -91,10 +79,7 @@ export class SuiMonitor {
       // Balance check: every tick (~10s)
       tasks.push(this.checkBalance());
 
-      // Agent balance: every 2nd tick (~20s)
-      if (this.pollTick % 2 === 0) {
-        tasks.push(this.checkAgentBalance());
-      }
+
 
       // Events: every 3rd tick (~30s)
       if (this.pollTick % 3 === 0) {
@@ -131,16 +116,20 @@ export class SuiMonitor {
         const diff = BigInt(balance.totalBalance) - BigInt(this.lastBalance);
         if (diff > 0n) {
           const amount = Number(diff) / 1_000_000_000;
-          api.broadcastPetEvent('pet:say', {
-            text: `💰 Nhận được SUI! +${amount.toFixed(2)} SUI vừa hạ cánh vào ví sếp kìa! 🚀`,
-            priority: true
-          });
+          const t = translations[(this.lang as Language) || 'en'] || translations['en'];
+          const variants = t.blockchainReceiveCoin || [`Received +${amount.toFixed(2)} SUI! 🚀`];
+          const msg = variants[Math.floor(Math.random() * variants.length)]
+            .replace('{amount}', amount.toFixed(2))
+            .replace('{coin}', 'SUI');
+          api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         } else if (diff < 0n) {
           const amount = Number(-diff) / 1_000_000_000;
-          api.broadcastPetEvent('pet:say', {
-            text: `💸 Ví vừa gửi đi -${amount.toFixed(2)} SUI thành công nha boss!`,
-            priority: true
-          });
+          const t = translations[(this.lang as Language) || 'en'] || translations['en'];
+          const variants = t.blockchainSendCoin || [`Sent -${amount.toFixed(2)} SUI`];
+          const msg = variants[Math.floor(Math.random() * variants.length)]
+            .replace('{amount}', amount.toFixed(2))
+            .replace('{coin}', 'SUI');
+          api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         }
       }
       this.lastBalance = balance.totalBalance;
@@ -149,32 +138,7 @@ export class SuiMonitor {
     }
   }
 
-  // --- Agent Balance Monitor ---
-  private async checkAgentBalance() {
-    if (!this.agentAddress || !this.enabled) return;
-    const api = (window as any).electronAPI;
-    try {
-      const rpcUrl = SUI_CONFIG.RPC_URL;
-      const response: any = await api.suiRpcCall('suix_getBalance', [this.agentAddress, '0x2::sui::SUI'], rpcUrl);
-      
-      if (response.error) throw new Error(response.error.message);
-      const balance = response.result;
 
-      if (this.lastAgentBalance !== null && balance.totalBalance !== this.lastAgentBalance) {
-        const diff = BigInt(balance.totalBalance) - BigInt(this.lastAgentBalance);
-        if (diff > 0n) {
-          const amount = Number(diff) / 1_000_000_000;
-          api.broadcastPetEvent('pet:say', {
-            text: `🤖 Yeah! Ví AI Agent vừa nhận thêm +${amount.toFixed(2)} SUI rồi nè sếp ơi! 🎉`,
-            priority: true
-          });
-        }
-      }
-      this.lastAgentBalance = balance.totalBalance;
-    } catch (e) {
-      console.error('[SuiMonitor] Agent Balance check failed', e);
-    }
-  }
 
 
 
@@ -208,8 +172,10 @@ export class SuiMonitor {
 
           if (isPhishing) {
             this.flaggedNFTs.add(objId);
-            const nftName = display?.name || content?.fields?.name || 'Vô danh';
-            const msg = `🚨 CẢNH BÁO PHISHING! Ví sếp vừa nhận được 1 NFT lạ mang tên: "${nftName}". Đây là NFT lừa đảo airdrop ảo. Tuyệt đối không click link lạ nha boss! ⛔`;
+            const nftName = display?.name || content?.fields?.name || 'Unknown';
+            const msg = this.lang === 'vi'
+              ? `🚨 CẢNH BÁO! Ví vừa nhận NFT lạ: "${nftName}". Đây có thể là lừa đảo. Không click link! ⛔`
+              : `🚨 PHISHING ALERT! Suspicious NFT received: "${nftName}". Do NOT click any links! ⛔`;
             api.broadcastPetEvent('pet:say', { text: msg, priority: true });
             api.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
             break; // Alert once per poll tick

@@ -44,6 +44,25 @@ export interface UserSettings {
   aiEnabled: boolean;
   fastTransferWallets?: { alias: string; address: string }[];
   agentAddress?: string;
+  /** Simulated auto-trade configuration, keyed by wallet ('pet' | 'agent') */
+  autoTrade?: Partial<Record<AutoTradeWallet, AutoTradeConfig>>;
+}
+
+/** Which wallet an auto-trade strategy runs on */
+export type AutoTradeWallet = 'pet' | 'agent';
+
+/** Simulated auto-trade strategy config for a single wallet */
+export interface AutoTradeConfig {
+  /** Whether the auto-trade loop is currently enabled (simulated) */
+  enabled: boolean;
+  /** Trade direction */
+  action?: 'buy' | 'sell';
+  /** Token symbol to trade (e.g. 'SUI') */
+  token?: string;
+  /** Amount per trade tick */
+  amount?: number;
+  /** Interval between trades, in minutes */
+  interval_minutes?: number;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

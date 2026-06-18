@@ -75,6 +75,28 @@
     #chat-input::placeholder {
       color: rgba(26, 27, 46, 0.45);
     }
+    #action-buttons {
+      flex-wrap: wrap;
+    }
+    #action-buttons button {
+      padding: 4px 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.1s;
+    }
+    #action-buttons button:active { transform: scale(0.95); }
+    #action-buttons .btn-yes {
+      background: #6c63ff;
+      color: #fff;
+    }
+    #action-buttons .btn-no {
+      background: rgba(0,0,0,0.08);
+      color: #555;
+    }
     #bubble::after {
       content: '';
       position: absolute;
@@ -94,6 +116,7 @@
     <div id="chat-container" style="display: none;">
       <input type="text" id="chat-input" placeholder="Chat with pet..." />
     </div>
+    <div id="action-buttons" style="display: none; margin-top: 6px; display: none; gap: 6px; justify-content: center;"></div>
   </div>
   <script type="module" src="./speech.ts"></script>
 </body>

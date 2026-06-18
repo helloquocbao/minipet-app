@@ -6,6 +6,7 @@ import { translations, Language } from '../../shared/i18n/translations';
 import { SuiMonitor } from '../blockchain/monitor';
 import { getAllWebviewWindows, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { SecurityAgent } from '../blockchain/agent';
+import { AutoTradeSimulator } from '../blockchain/auto-trade';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 
 let statusAlarming = false;
@@ -17,9 +18,22 @@ let instanceId: string | null = null;
 let lastGlobalSpeechTime = 0;
 let controller: AnimationController;
 let stateMachine: PetStateMachine;
+
+/** Get a translated string with EN fallback. Supports {placeholder} replacement. */
+function tt(key: string, replacements?: Record<string, string>): string {
+  const t = translations[currentLanguage] || translations['en'];
+  let text = t[key] || (translations['en'] as any)[key] || key;
+  if (replacements) {
+    for (const [k, v] of Object.entries(replacements)) {
+      text = text.replace(`{${k}}`, v);
+    }
+  }
+  return text;
+}
 let currentSpeechText = '';
 let suiMonitor: SuiMonitor | null = null;
 let securityAgent: SecurityAgent | null = null;
+let autoTradeSimulator: AutoTradeSimulator | null = null;
 let currentActivePets: any[] = [];
 let speechWindowRef: any = null;
 let lastContextKey = '';
@@ -29,6 +43,80 @@ let isChatActive = false;
 let isAnyChatActive = false;
 let pendingWalletSyncAddress = '';
 let isSuggestingWalletSync = false;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+let cachedSettings: any = null;
+
+async function executeTransactionWithWallet(client: any, transaction: any, savedSettings: any): Promise<any> {
+  const zkLoginSession = savedSettings.zkLoginSession;
+
+  // Strategy 1: Use zkLogin session if available
+  if (zkLoginSession && savedSettings.suiAddress) {
+    console.warn('[executeTransactionWithWallet] Executing transaction using zkLogin...');
+    const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+    const { getExtendedEphemeralPublicKey, getZkLoginSignature } = await import('@mysten/sui/zklogin');
+
+    const ephemeralKeypair = Ed25519Keypair.fromSecretKey(zkLoginSession.ephemeralPrivateKey);
+
+    const proverUrl = 'https://prover-dev.mystenlabs.com/v1';
+    const salt = zkLoginSession.salt || '0';
+    const proverResponse = await fetch(proverUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jwt: zkLoginSession.jwt,
+        extendedEphemeralPublicKey: getExtendedEphemeralPublicKey(ephemeralKeypair.getPublicKey()),
+        maxEpoch: parseInt(zkLoginSession.maxEpoch),
+        jwtRandomness: zkLoginSession.randomness,
+        salt,
+        keyClaimName: 'sub'
+      })
+    });
+
+    if (!proverResponse.ok) {
+      const errMsg = await proverResponse.text();
+      throw new Error(`ZK Prover failed: ${errMsg}`);
+    }
+
+    const zkProof = await proverResponse.json();
+    transaction.setSender(savedSettings.suiAddress);
+    const txBytes = await transaction.build({ client });
+    const { signature: ephemeralSignature } = await ephemeralKeypair.signTransaction(txBytes);
+    const zkLoginSignature = getZkLoginSignature({
+      inputs: zkProof,
+      maxEpoch: parseInt(zkLoginSession.maxEpoch),
+      userSignature: ephemeralSignature,
+    });
+
+    const result = await client.executeTransactionBlock({
+      transactionBlock: txBytes,
+      signature: zkLoginSignature,
+      options: { showEffects: true, showEvents: true }
+    });
+    return result;
+  }
+
+  // Strategy 2: Use agent wallet (local Ed25519 keypair) if available
+  if (savedSettings.agentSecretKey) {
+    console.warn('[executeTransactionWithWallet] Executing transaction using Agent wallet...');
+    const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+    const secretBytes = Uint8Array.from(atob(savedSettings.agentSecretKey), c => c.charCodeAt(0));
+    const agentKeypair = Ed25519Keypair.fromSecretKey(secretBytes);
+    const agentAddress = agentKeypair.getPublicKey().toSuiAddress();
+
+    transaction.setSender(agentAddress);
+    const txBytes = await transaction.build({ client });
+    const { signature } = await agentKeypair.signTransaction(txBytes);
+
+    const result = await client.executeTransactionBlock({
+      transactionBlock: txBytes,
+      signature,
+      options: { showEffects: true, showEvents: true }
+    });
+    return result;
+  }
+
+  throw new Error("No signing method available. Please generate an Agent wallet or sync zkLogin from browser.");
+}
 
 async function getOrCreateSpeechWindow() {
   if (speechWindowRef) return speechWindowRef;
@@ -120,7 +208,22 @@ async function handleDeepLinkUrl(url: string) {
           }
 
           // Cập nhật cài đặt ngay lập tức, bỏ confirm dialog trên cửa sổ trong suốt để tránh treo/bị chặn
-          await api.updateSettings({ suiAddress: address, suiEnabled: true });
+          const zkloginPayloadBase64 = parsed.searchParams.get('zkloginPayload');
+          let zkLoginSession = null;
+          if (zkloginPayloadBase64) {
+            try {
+              const decoded = atob(zkloginPayloadBase64);
+              zkLoginSession = JSON.parse(decoded);
+            } catch (err) {
+              console.error('Failed to parse zkloginPayload:', err);
+            }
+          }
+
+          const updateObj: any = { suiAddress: address, suiEnabled: true, walletMode: 'zklogin' };
+          if (zkLoginSession) {
+            updateObj.zkLoginSession = zkLoginSession;
+          }
+          await api.updateSettings(updateObj);
           
           // Pet thông báo đồng bộ thành công
           showSpeech("Yeah! Đồng bộ ví Sui thành công rồi nha sen! Đang tải lại tài sản... 🎉", 6000, true, 'System');
@@ -236,6 +339,7 @@ async function init(): Promise<void> {
 
   // 4. Initialize animation controllers and state machine
   const savedSettings: any = await window.electronAPI.getSettings();
+  cachedSettings = savedSettings;
   currentActivePets = savedSettings?.activePets || [];
   const initialScale = Number(petData.scale || savedSettings?.scale) || 1.0;
   const isWalkingEnabled = savedSettings?.enableWalking !== false;
@@ -319,6 +423,7 @@ async function init(): Promise<void> {
   // --- Settings Update Handling ---
   window.electronAPI.onSettingsUpdate((data: any) => { void (async () => {
     const { settings } = data;
+    cachedSettings = settings;
     currentActivePets = settings.activePets || [];
     currentLanguage = settings.language || 'en';
 
@@ -475,62 +580,89 @@ async function init(): Promise<void> {
   });
 
   // --- Local AI Bootup Logic ---
-  // Only start AI if the user has enabled it AND has a connected wallet
-  // (AI agent requires on-chain features which need a wallet)
   const aiEnabled = savedSettings?.aiEnabled !== false;
-  const walletConnected = !!(savedSettings?.suiAddress && savedSettings?.suiEnabled);
 
-  if (aiEnabled && walletConnected) {
+  if (aiEnabled) {
     const { invoke } = await import('@tauri-apps/api/core');
     const { listen } = await import('@tauri-apps/api/event');
 
     try {
       const hasModel = await invoke('check_model_exists');
       if (!hasModel) {
-        const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-        const t = translations[lang];
+        // Wait for pet window position to settle before showing bubble
+        await new Promise<void>(r => { setTimeout(r, 1500); });
 
-        let initialMsg = t.modelDownloading || "Downloading brain...";
-        initialMsg = initialMsg
-          .replace('{percent}', '0.0')
-          .replace('{downloaded}', '0.0')
-          .replace('{total}', '1000');
-        showSpeech(initialMsg, 999999, true, 'System');
+        // Ask user permission to download brain
+        const isVi = currentLanguage === 'vi';
+        const askText = isVi
+          ? "Sen ơi, tui chưa có bộ não! Cho tui tải về không? (~1GB, chạy offline 100%) 🧠"
+          : "Hey! I don't have a brain yet! Can I download it? (~1GB, runs 100% offline) 🧠";
 
-        let lastPercentInt = -1;
-        const unlisten = await listen('model-download-progress', (event: any) => {
-          const payload = event.payload as any;
-          const percentNum = payload.progress;
-          const percentInt = Math.floor(percentNum);
+        void updateSpeechOverlay(askText, true, [
+          { label: isVi ? 'Tải về' : 'Download', action: 'download-brain', style: 'primary' },
+          { label: isVi ? 'Để sau' : 'Later', action: 'skip-brain', style: 'secondary' }
+        ]);
+        void syncWindowSize();
 
-          if (percentInt !== lastPercentInt) {
-            lastPercentInt = percentInt;
-            const percentStr = percentNum.toFixed(1);
-            const downloadedMB = (payload.downloaded / 1048576).toFixed(1);
-            const totalMB = (payload.total / 1048576).toFixed(1);
-
-            const currentLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-            const currentT = translations[currentLang];
-
-            let progressMsg = currentT.modelDownloading || "Downloading brain...";
-            progressMsg = progressMsg
-              .replace('{percent}', percentStr)
-              .replace('{downloaded}', downloadedMB)
-              .replace('{total}', totalMB);
-
-            showSpeech(progressMsg, 999999, true, 'System');
-          }
+        // Wait for user response
+        const userChoice = await new Promise<string>((resolve) => {
+          void listen(`speech-button-${instanceId}`, (event: any) => {
+            resolve(event.payload.action);
+          });
         });
 
-        await invoke('download_model');
-        unlisten();
+        if (userChoice !== 'download-brain') {
+          hideSpeech();
+          // Skip AI for this session
+        } else {
+          // Proceed with download
+          const lang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+          const t = translations[lang];
 
-        const postLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
-        const postT = translations[postLang];
-        showSpeech(postT.modelDownloadComplete || "Tải xong rồi! Đang khởi động não...", 4000, true, 'System');
+          let initialMsg = t.modelDownloading || "Downloading brain...";
+          initialMsg = initialMsg
+            .replace('{percent}', '0.0')
+            .replace('{downloaded}', '0.0')
+            .replace('{total}', '1000');
+          showSpeech(initialMsg, 999999, true, 'System');
+
+          let lastPercentInt = -1;
+          const unlisten = await listen('model-download-progress', (event: any) => {
+            const payload = event.payload as any;
+            const percentNum = payload.progress;
+            const percentInt = Math.floor(percentNum);
+
+            if (percentInt !== lastPercentInt) {
+              lastPercentInt = percentInt;
+              const percentStr = percentNum.toFixed(1);
+              const downloadedMB = (payload.downloaded / 1048576).toFixed(1);
+              const totalMB = (payload.total / 1048576).toFixed(1);
+
+              const currentLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+              const currentT = translations[currentLang];
+
+              let progressMsg = currentT.modelDownloading || "Downloading brain...";
+              progressMsg = progressMsg
+                .replace('{percent}', percentStr)
+                .replace('{downloaded}', downloadedMB)
+                .replace('{total}', totalMB);
+
+              showSpeech(progressMsg, 999999, true, 'System');
+            }
+          });
+
+          await invoke('download_model');
+          unlisten();
+
+          const postLang = (currentLanguage && translations[currentLanguage]) ? currentLanguage : 'en';
+          const postT = translations[postLang];
+          showSpeech(postT.modelDownloadComplete || "Tải xong rồi! Đang khởi động não...", 4000, true, 'System');
+
+          await invoke('start_ai_server');
+        }
+      } else {
+        await invoke('start_ai_server');
       }
-
-      await invoke('start_ai_server');
     } catch (err) {
       console.error("[Local AI] Boot failed:", err);
     }
@@ -565,6 +697,12 @@ async function setupMasterElection() {
           securityAgent = new SecurityAgent();
           void securityAgent.start();
         }
+        if (!autoTradeSimulator) {
+          autoTradeSimulator = new AutoTradeSimulator(
+            (text: string) => showSpeech(text, 6000, false, 'auto-trade')
+          );
+          autoTradeSimulator.start();
+        }
       } else {
         if (suiMonitor) {
           (suiMonitor as any).stopPolling?.();
@@ -573,6 +711,10 @@ async function setupMasterElection() {
         if (securityAgent) {
           securityAgent.stop();
           securityAgent = null;
+        }
+        if (autoTradeSimulator) {
+          autoTradeSimulator.stop();
+          autoTradeSimulator = null;
         }
       }
     } catch (err) {
@@ -670,7 +812,7 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
           setTimeout(() => window.location.reload(), 2000);
         }).catch((err: any) => {
           console.error('[Overlay] Failed to save sync address:', err);
-          showSpeech("Hic, lưu ví gặp lỗi rồi sen ơi... 😢", 4000, true, 'System');
+          showSpeech(tt("walletSaveError"), 4000, true, 'System');
         });
       }
       return;
@@ -754,15 +896,18 @@ function setupMouseInteraction(canvas: HTMLCanvasElement, stateMachine: PetState
 /**
  * Updates the internal speech bubble text and visibility.
  */
-async function updateSpeechOverlay(text: string, visible: boolean) {
+async function updateSpeechOverlay(text: string, visible: boolean, buttons?: { label: string; action: string; style?: string }[]) {
   try {
     const win = await getOrCreateSpeechWindow();
     if (visible) {
+      isSpeechVisible = true;
       await win.show();
       await syncSpeechWindowPosition();
+      // Small delay to ensure speech webview has loaded and is listening for events
+      await new Promise<void>(r => { setTimeout(r, 200); });
     }
     // Gửi event sang speech window
-    void window.electronAPI.broadcastPetEvent(`update-speech-${instanceId}`, { text, visible });
+    void window.electronAPI.broadcastPetEvent(`update-speech-${instanceId}`, { text, visible, buttons: buttons || null });
     
     if (!visible) {
       setTimeout(() => win.hide(), 350);
@@ -1167,7 +1312,7 @@ const LANG_NAME_MAP: Record<string, string> = {  vi: 'Vietnamese',
 
 function buildSystemPrompt(langCode: string, timeStr?: string, dateStr?: string): string {
   const langName = LANG_NAME_MAP[langCode] || 'English';
-  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet, or send a gift. You can also use 'add_fast_transfer_wallet' or 'remove_fast_transfer_wallet' to manage the user's fast transfer whitelist if they explicitly ask to add or remove an address starting with 0x. NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. Answer in ${langName}.`;
+  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet (bonk_pet), send a gift (send_pet_gift), rename your pet (rename_pet), or check your pet's stats (check_pet_stats). The recipient for transfer_sui, send_pet_gift and bonk_pet may be a raw 0x address OR a saved contact alias. You can also use 'add_fast_transfer_wallet' or 'remove_fast_transfer_wallet' to manage the user's fast transfer whitelist if they explicitly ask to add or remove an address starting with 0x. For transfers: if the recipient is a saved contact alias, pass that alias as recipient_address with confirmed=false (it is whitelisted, send immediately); if the recipient is a raw 0x address that is NOT whitelisted, first call transfer_sui with confirmed=false, and only set confirmed=true AFTER the user explicitly confirms. For automated trading use 'start_auto_trade', 'stop_auto_trade', 'configure_auto_trade' or 'get_auto_trade_status' with wallet set to 'pet' or 'agent' (this is a simulated feature configured in Settings). NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. You MUST answer ONLY in ${langName}. Do NOT mix languages.`;
   if (timeStr && dateStr) {
     prompt += ` Current time: ${timeStr}, Date: ${dateStr}.`;
   }
@@ -1192,7 +1337,7 @@ async function handlePendingTransferClarification(userText: string) {
 
   if (text === 'hủy' || text === 'cancel') {
     pendingTransfer = null;
-    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: "Đã hủy giao dịch chuyển tiền." });
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: tt("transferCancelled") });
     return;
   }
 
@@ -1217,54 +1362,44 @@ async function handlePendingTransferClarification(userText: string) {
     const recipientAlias = pendingTransfer.candidates.find(c => c.address === selectedAddress)?.alias || selectedAddress;
     pendingTransfer = null;
 
-    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: "💸 Đang xử lý chuyển khoản..." });
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: tt("processingTransfer") });
 
     try {
       const savedSettings: any = await window.electronAPI.getSettings();
-      if (!savedSettings.agentSecretKey) {
-        const errText = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+      if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+        const errText = tt("walletNotSynced");
         localChatHistory.push({ role: "assistant", content: errText });
         (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: errText });
         return;
       }
 
-      const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
       const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
       const { Transaction } = await import('@mysten/sui/transactions');
       
-      const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
       const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
       
       const tx = new Transaction();
       const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
       tx.transferObjects([coin], selectedAddress);
       
-      await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
-      const successText = `✅ Đã chuyển ${amount} SUI thành công cho ${recipientAlias}! 🎉`;
+      await executeTransactionWithWallet(client, tx, savedSettings);
+      const successText = tt('transferSuccess', { amount: amount.toString(), recipient: recipientAlias });
       
       localChatHistory.push({ role: "assistant", content: successText });
       (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: successText });
     } catch (e: any) {
       const errMsg = e.message || e.toString();
-      let friendlyMsg: string;
-      const lowerErr = errMsg.toLowerCase();
-      if (lowerErr.includes('insufficient') && (lowerErr.includes('gas') || lowerErr.includes('balance'))) {
-        friendlyMsg = `❌ Chuyển tiền thất bại: Số dư ví không đủ SUI để thực hiện giao dịch và trả phí gas!`;
-      } else if (lowerErr.includes('reject') || lowerErr.includes('user rejected') || lowerErr.includes('cancelled')) {
-        friendlyMsg = `❌ Chuyển tiền thất bại: Giao dịch đã bị hủy bỏ bởi sếp!`;
-      } else {
-        friendlyMsg = `❌ Chuyển tiền thất bại: ${errMsg}`;
-      }
+      const friendlyMsg = tt('transferFailed', { error: errMsg });
       
       localChatHistory.push({ role: "assistant", content: friendlyMsg });
       (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: friendlyMsg });
     }
   } else {
-    let reply = `❌ Lựa chọn không hợp lệ. Vui lòng chọn số (1-${pendingTransfer.candidates.length}), nhập địa chỉ ví, hoặc chat "hủy":\n`;
+    let list = `${tt('invalidChoice')}\n`;
     pendingTransfer.candidates.forEach((cand, idx) => {
-      reply += `${idx + 1}. ${cand.alias} (${cand.address.substring(0, 6)}...${cand.address.substring(cand.address.length - 4)})\n`;
+      list += `${idx + 1}. ${cand.alias} (${cand.address.substring(0, 6)}...${cand.address.substring(cand.address.length - 4)})\n`;
     });
-    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: reply });
+    (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, { text: list });
   }
 }
 
@@ -1272,6 +1407,14 @@ async function handleLocalChat(userText: string) {
   const savedSettings: any = await window.electronAPI.getSettings();
 
   const FAST_TRANSFER_WALLETS: { alias: string; address: string }[] = savedSettings?.fastTransferWallets || [];
+
+  // Resolve a recipient that may be either a raw 0x address or a saved contact alias.
+  const resolveRecipient = (input: string): string => {
+    if (!input) return input;
+    if (input.startsWith('0x')) return input;
+    const hit = FAST_TRANSFER_WALLETS.find(w => w.alias.toLowerCase() === input.trim().toLowerCase());
+    return hit ? hit.address : input;
+  };
   
   try {
     // Dynamic system prompt update with language from settings + current local time
@@ -1286,6 +1429,12 @@ async function handleLocalChat(userText: string) {
     
     localChatHistory.push({ role: "user", content: userText });
 
+    // For non-Vietnamese languages, inject a strong reminder to prevent model defaulting to Vietnamese
+    const langName = LANG_NAME_MAP[lang] || 'English';
+    if (lang !== 'vi') {
+      localChatHistory.push({ role: "system", content: `[IMPORTANT: Reply in ${langName} only. Do NOT use Vietnamese.]` });
+    }
+
     const payload: any = {
       model: "qwen2.5-1.5b.gguf",
       messages: localChatHistory
@@ -1296,6 +1445,11 @@ async function handleLocalChat(userText: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+
+    // Remove injected language reminder from history (don't accumulate)
+    if (lang !== 'vi' && localChatHistory.length > 1 && localChatHistory[localChatHistory.length - 1].role === 'system') {
+      localChatHistory.pop();
+    }
 
     const data = await response.json();
     const message = data.choices[0].message;
@@ -1313,84 +1467,66 @@ async function handleLocalChat(userText: string) {
 
     // Friendly processing messages based on tool name
     function getProcessingMessage(fnName: string): string {
+      const t = translations[currentLanguage] || translations['en'];
       const msgs: Record<string, string> = {
-        'transfer_sui': '💸 Đang xử lý chuyển khoản...',
-        'check_wallet_balance': '💰 Đang kiểm tra số dư ví...',
-        'swap_sui_to_usdc': '🔄 Đang swap SUI sang USDC...',
-        'set_pomodoro_timer': '⏱️ Đang bật timer...',
-        'bonk_pet': '🥊 Đang gõ đầu pet...',
-        'send_pet_gift': '🎁 Đang gửi quà tặng...',
-        'add_fast_transfer_wallet': '📝 Đang thêm ví vào danh sách whitelist...',
-        'remove_fast_transfer_wallet': '🗑️ Đang xoá ví khỏi danh sách whitelist...',
+        'transfer_sui': t.processingTransfer || '💸 Processing transfer...',
+        'check_wallet_balance': '💰 ...',
+        'swap_sui_to_usdc': '🔄 ...',
+        'set_pomodoro_timer': '⏱️ ...',
+        'bonk_pet': '🥊 ...',
+        'send_pet_gift': '🎁 ...',
+        'rename_pet': '✨ ...',
+        'check_pet_stats': '📊 ...',
+        'add_fast_transfer_wallet': '📝 ...',
+        'remove_fast_transfer_wallet': '🗑️ ...',
+        'start_auto_trade': '🤖 ...',
+        'stop_auto_trade': '🛑 ...',
+        'configure_auto_trade': '⚙️ ...',
+        'get_auto_trade_status': '📊 ...',
       };
-      return msgs[fnName] || '⏳ Đang xử lý...';
+      return msgs[fnName] || t.processing || '⏳ Processing...';
     }
 
-    // Translate technical errors into friendly Vietnamese
+    // Translate technical errors into friendly messages
     function friendlyError(rawError: string, action: string): string {
       const e = rawError.toLowerCase();
       
-      // 1. Gas / Balance Errors
       if (e.includes('insufficient') && (e.includes('gas') || e.includes('balance') || e.includes('coin'))) {
-        return `❌ ${action} thất bại: Số dư ví không đủ SUI để thực hiện giao dịch và trả phí gas! Sếp nạp thêm SUI vào ví nhé.`;
+        return tt('errInsufficientBalance', { action });
       }
       if (e.includes('insufficientcoinbalance') || e.includes('not enough coin')) {
-        return `❌ ${action} thất bại: Số dư token trong ví không đủ để thực hiện yêu cầu này!`;
+        return tt('errInsufficientToken', { action });
       }
       if (e.includes('dryrunfailed') || e.includes('dry run failed')) {
-        if (e.includes('gasinbalance') || e.includes('gaslimit')) {
-          return `❌ ${action} thất bại: Ước tính phí gas bị lỗi. Có thể số dư ví quá thấp để làm phí giao dịch.`;
-        }
-        return `❌ ${action} thất bại: Thử nghiệm giao dịch bị lỗi (Dry Run Failed). Vui lòng kiểm tra lại số dư hoặc địa chỉ nhận.`;
+        return tt('errDryRun', { action });
       }
-      
-      // 2. Network / Node Connection Errors
       if (e.includes('network') || e.includes('fetch') || e.includes('econnrefused') || e.includes('enotfound') || e.includes('failed to fetch')) {
-        return `❌ ${action} thất bại: Lỗi kết nối mạng hoặc máy chủ blockchain SUI không phản hồi! Sếp kiểm tra lại internet hoặc link RPC trong Cài đặt nhé.`;
+        return tt('errNetwork', { action });
       }
       if (e.includes('timeout') || e.includes('timed out')) {
-        return `❌ ${action} thất bại: Yêu cầu bị hết thời gian chờ! Mạng lưới SUI có thể đang quá tải, sếp thử lại sau nhé.`;
+        return tt('errTimeout', { action });
       }
-      
-      // 3. Address Errors
       if (e.includes('invalid') && (e.includes('address') || e.includes('hex'))) {
-        return `❌ ${action} thất bại: Địa chỉ ví nhận không hợp lệ! Sếp kiểm tra kỹ lại định dạng địa chỉ SUI (bắt đầu bằng 0x...).`;
+        return tt('errInvalidAddress', { action });
       }
-      
-      // 4. Object / NFT / Token errors
       if (e.includes('object not found') || e.includes('objectnotfound') || e.includes('not exist')) {
-        return `❌ ${action} thất bại: Vật phẩm hoặc token không tồn tại trên blockchain hoặc đã được chuyển đi nơi khác.`;
+        return tt('errObjectNotFound', { action });
       }
-      
-      // 5. Smart Contract Abort / Move Abort Errors
       if (e.includes('moveabort') || e.includes('execution failure') || e.includes('move abort')) {
-        if (e.includes('abort code 1') || e.includes('code 1')) {
-          return `❌ ${action} thất bại: Giao dịch bị từ chối! Có thể sếp đã thực hiện thao tác này hôm nay rồi.`;
-        }
-        if (e.includes('abort code 2') || e.includes('code 2')) {
-          return `❌ ${action} thất bại: Sai quyền truy cập hoặc điều kiện smart contract chưa được thỏa mãn.`;
-        }
-        return `❌ ${action} thất bại: Smart Contract từ chối giao dịch (Move Abort). Có thể do vi phạm quy tắc của hợp đồng thông minh.`;
+        return tt('errContractReject', { action });
       }
-      
-      // 6. Rate limit
       if (e.includes('429') || e.includes('rate limit') || e.includes('too many requests')) {
-        return `❌ ${action} thất bại: Tần suất gửi yêu cầu quá nhanh! Sếp vui lòng đợi 5-10 giây rồi thử lại nha.`;
+        return tt('errRateLimit', { action });
       }
-
-      // 7. Secret key / Burner Wallet Configuration
-      if (e.includes('secret') || e.includes('keypair') || e.includes('invalid key') || e.includes('cannot sign')) {
-        return `❌ ${action} thất bại: Khóa bảo mật ví burner của AI Agent bị lỗi hoặc chưa đúng định dạng! Sếp vui lòng kiểm tra lại cấu hình trong phần Settings.`;
+      if (e.includes('secret') || e.includes('keypair') || e.includes('invalid key') || e.includes('cannot sign') || e.includes('ephemeral')) {
+        return tt('errSessionExpired', { action });
       }
-
-      // 8. User Reject
       if (e.includes('reject') || e.includes('user rejected') || e.includes('cancelled')) {
-        return `❌ ${action} thất bại: Giao dịch đã bị hủy bỏ bởi sếp!`;
+        return tt('errUserCancelled', { action });
       }
       
-      // Fallback: show shortened raw error but still looking clean
       const short = rawError.length > 120 ? `${rawError.substring(0, 120)}...` : rawError;
-      return `❌ ${action} thất bại do lỗi blockchain: "${short}"`;
+      return tt('errGeneric', { action, error: short });
     }
 
     // Detect <tool_call> tags in text content
@@ -1443,19 +1579,17 @@ async function handleLocalChat(userText: string) {
       
       let toolResult = "";
       if (fnName === "swap_sui_to_usdc") {
-        if (!savedSettings.agentSecretKey) {
-          toolResult = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+        if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+          toolResult = tt("walletNotSynced");
         } else {
           try {
             const amount = args.amount;
             if (!amount) {
               toolResult = "❌ Thiếu số lượng SUI cần swap!";
             } else {
-              const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
               const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
               
-              const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
               const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
               
               const tx = new Transaction();
@@ -1463,7 +1597,7 @@ async function handleLocalChat(userText: string) {
               const treasuryAddr = savedSettings.treasury_address || "0xffc5bb02aa137b5df823f9a241196866a827f352b80c8c5d88e757d6a3e667f8";
               tx.transferObjects([coin], treasuryAddr);
               
-              await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+              await executeTransactionWithWallet(client, tx, savedSettings);
               const usdcReceived = (amount * 1.2).toFixed(2);
               toolResult = `✅ Swap thành công! ${amount} SUI → ${usdcReceived} USDC 🎉`;
             }
@@ -1487,8 +1621,8 @@ async function handleLocalChat(userText: string) {
         window.electronAPI.startPomo(mins, 5);
         toolResult = `⏱️ Đã bật Pomodoro ${mins} phút! Tập trung nào! 💪`;
       } else if (fnName === "transfer_sui") {
-        if (!savedSettings.agentSecretKey) {
-          toolResult = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+        if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+          toolResult = tt("walletNotSynced");
         } else {
           try {
             const recipient = args.recipient_address;
@@ -1508,38 +1642,34 @@ async function handleLocalChat(userText: string) {
                   if (!confirmed) {
                     toolResult = "⚠️ Địa chỉ ví này hơi lạ, bạn có chắc chắn muốn chuyển không? Chat \"oke\" để xác nhận nhé!";
                   } else {
-                    const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
                     const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
                     const { Transaction } = await import('@mysten/sui/transactions');
                     
-                    const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
                     const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
                     
                     const tx = new Transaction();
                     const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
                     tx.transferObjects([coin], recipient);
                     
-                    await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
-                    toolResult = `✅ Đã chuyển ${amount} SUI thành công! 🎉`;
+                    await executeTransactionWithWallet(client, tx, savedSettings);
+                    toolResult = tt("transferSuccess", { amount: amount.toString(), recipient: recipient.slice(0, 10) });
                   }
                 } else {
-                  toolResult = `❌ Không tìm thấy ví nhận nào có alias hoặc địa chỉ "${recipient}" trong whitelist.`;
+                  toolResult = `❌ Recipient "${recipient}" not found in whitelist.`;
                 }
               } else if (candidates.length === 1) {
                 const resolvedAddress = candidates[0].address;
-                const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
                 const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
                 const { Transaction } = await import('@mysten/sui/transactions');
                 
-                const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
                 const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
                 
                 const tx = new Transaction();
                 const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
                 tx.transferObjects([coin], resolvedAddress);
                 
-                await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
-                toolResult = `✅ Đã chuyển ${amount} SUI thành công cho ${candidates[0].alias}! 🎉`;
+                await executeTransactionWithWallet(client, tx, savedSettings);
+                toolResult = tt("transferSuccess", { amount: amount.toString(), recipient: candidates[0].alias });
               } else {
                 pendingTransfer = {
                   recipientAlias: recipient,
@@ -1556,7 +1686,7 @@ async function handleLocalChat(userText: string) {
               }
             }
           } catch(e: any) {
-            toolResult = friendlyError(e.message || e.toString(), 'Chuyển tiền');
+            toolResult = friendlyError(e.message || e.toString(), 'Transfer');
           }
         }
       } else if (fnName === "add_fast_transfer_wallet") {
@@ -1596,20 +1726,58 @@ async function handleLocalChat(userText: string) {
             toolResult = `ℹ️ Không tìm thấy ${alias || address} trong danh sách!`;
           }
         }
+      } else if (fnName === "start_auto_trade" || fnName === "stop_auto_trade" || fnName === "configure_auto_trade" || fnName === "get_auto_trade_status") {
+        // ── Auto-trade (SIMULATED feature) for the 'pet' or 'agent' wallet ──
+        const wallet: 'pet' | 'agent' = (String(args.wallet || 'pet').toLowerCase() === 'agent') ? 'agent' : 'pet';
+        const walletLabel = wallet === 'agent' ? 'ví Agent' : 'ví Pet';
+        const currentAutoTrade: Record<string, any> = { ...(savedSettings.autoTrade || {}) };
+        const existing = currentAutoTrade[wallet] || {};
+
+        const describeStrategy = (cfg: any): string => {
+          if (!cfg || cfg.action === undefined) return 'theo cấu hình mặc định';
+          const verb = cfg.action === 'sell' ? 'Bán' : 'Mua';
+          return `${verb} ${cfg.amount ?? '?'} ${cfg.token || 'SUI'} mỗi ${cfg.interval_minutes ?? 60} phút`;
+        };
+        const DEV_NOTE = ' 🧪 Tính năng giả lập, đang phát triển — chờ lên mainnet.';
+
+        if (fnName === "start_auto_trade") {
+          currentAutoTrade[wallet] = { ...existing, enabled: true };
+          await window.electronAPI.updateSettings({ autoTrade: currentAutoTrade });
+          toolResult = `🤖 Đã BẬT auto-trade cho ${walletLabel}: ${describeStrategy(existing)}.${DEV_NOTE}`;
+        } else if (fnName === "stop_auto_trade") {
+          currentAutoTrade[wallet] = { ...existing, enabled: false };
+          await window.electronAPI.updateSettings({ autoTrade: currentAutoTrade });
+          toolResult = `🛑 Đã TẮT auto-trade cho ${walletLabel}.${DEV_NOTE}`;
+        } else if (fnName === "configure_auto_trade") {
+          const action = args.action === 'sell' ? 'sell' : 'buy';
+          const token = args.token || 'SUI';
+          const amount = typeof args.amount === 'number' ? args.amount : parseFloat(args.amount) || existing.amount;
+          const interval = typeof args.interval_minutes === 'number' ? args.interval_minutes : parseInt(args.interval_minutes) || existing.interval_minutes || 60;
+          const newCfg = { enabled: existing.enabled ?? false, action, token, amount, interval_minutes: interval };
+          currentAutoTrade[wallet] = newCfg;
+          await window.electronAPI.updateSettings({ autoTrade: currentAutoTrade });
+          toolResult = `⚙️ Đã lưu cấu hình auto-trade cho ${walletLabel}: ${describeStrategy(newCfg)}.${DEV_NOTE}`;
+        } else { // get_auto_trade_status
+          if (!existing || existing.enabled === undefined) {
+            toolResult = `📊 ${walletLabel} hiện CHƯA cấu hình auto-trade.${DEV_NOTE}`;
+          } else {
+            toolResult = `📊 ${walletLabel} auto-trade đang ${existing.enabled ? 'BẬT 🟢' : 'TẮT 🔴'} — ${describeStrategy(existing)}.${DEV_NOTE}`;
+          }
+        }
       } else if (fnName === "bonk_pet") {
-        if (!savedSettings.agentSecretKey) {
-          toolResult = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+        if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+          toolResult = tt("walletNotSynced");
         } else {
           try {
-            const targetAddress = args.target_address;
+            const targetAddress = resolveRecipient(args.target_address);
             if (!targetAddress) {
               toolResult = "❌ Thiếu địa chỉ ví pet cần gõ đầu!";
+            } else if (!targetAddress.startsWith('0x')) {
+              toolResult = `❌ Recipient "${args.target_address}" not found. Use a 0x address or add an alias first.`;
             } else {
-              const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
               const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
 
-              const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
               const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
 
               // 1. Tìm Object ID của PetNFT của người dùng
@@ -1617,7 +1785,7 @@ async function handleLocalChat(userText: string) {
               if (activePetConfig?.slug && activePetConfig.slug.startsWith("nft-")) {
                 petObjectId = activePetConfig.slug.substring(4);
               } else {
-                const userAddr = keypair.toSuiAddress();
+                const userAddr = savedSettings.suiAddress;
                 const petType = "0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c::pet_nft::PetNFT";
                 const ownedPetsRes: any = await window.electronAPI.suiRpcCall("suix_getOwnedObjects", [
                   userAddr,
@@ -1634,13 +1802,13 @@ async function handleLocalChat(userText: string) {
                 // 2. Tìm Coin<PET_TOKEN> để thanh toán phí gõ đầu
                 const tokenType = "0xf20998a7f30a94ead030ad6528899aafff4693900fb4b547f59882615a0c24a4::pet_token::PET_TOKEN";
                 const coinsRes: any = await window.electronAPI.suiRpcCall("suix_getCoins", [
-                  keypair.toSuiAddress(),
+                  savedSettings.suiAddress,
                   tokenType
                 ], "https://fullnode.testnet.sui.io:443");
 
                 const coins = coinsRes?.result?.data || [];
                 if (coins.length === 0) {
-                  toolResult = "❌ Không đủ MIPET trong ví burner! Phí gõ đầu là 100 MIPET.";
+                  toolResult = "❌ Không đủ MIPET trong ví! Phí gõ đầu là 100 MIPET.";
                 } else {
                   const totalBalance = coins.reduce((acc: number, c: any) => acc + parseInt(c.balance || "0"), 0);
                   const requiredFee = 100 * 1_000_000_000;
@@ -1667,33 +1835,33 @@ async function handleLocalChat(userText: string) {
                       ]
                     });
 
-                    await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                    await executeTransactionWithWallet(client, tx, savedSettings);
                     toolResult = `✅ Đã gõ đầu pet thành công! 🥊💥`;
                   }
                 }
               }
             }
           } catch (e: any) {
-            toolResult = friendlyError(e.message || e.toString(), 'Gõ đầu pet');
+            toolResult = friendlyError(e.message || e.toString(), 'Bonk');
           }
         }
       } else if (fnName === "send_pet_gift") {
-        if (!savedSettings.agentSecretKey) {
-          toolResult = "❌ Chưa cấu hình ví burner AI Agent. Vào Settings để thiết lập nhé!";
+        if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+          toolResult = tt("walletNotSynced");
         } else {
           try {
-            const recipient = args.recipient_address;
+            const recipient = resolveRecipient(args.recipient_address);
             const amount = args.amount;
             const msgText = args.message;
 
             if (!recipient || amount === undefined || msgText === undefined) {
               toolResult = "❌ Thiếu thông tin! Cần địa chỉ ví, số lượng SUI và lời nhắn.";
+            } else if (!recipient.startsWith('0x')) {
+              toolResult = `❌ Recipient "${args.recipient_address}" not found. Use a 0x address or add an alias first.`;
             } else {
-              const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
               const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
               const { Transaction } = await import('@mysten/sui/transactions');
 
-              const keypair = Ed25519Keypair.fromSecretKey(savedSettings.agentSecretKey);
               const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
 
               // 1. Tìm Object ID của PetNFT của người dùng
@@ -1701,7 +1869,7 @@ async function handleLocalChat(userText: string) {
               if (activePetConfig?.slug && activePetConfig.slug.startsWith("nft-")) {
                 petObjectId = activePetConfig.slug.substring(4);
               } else {
-                const userAddr = keypair.toSuiAddress();
+                const userAddr = savedSettings.suiAddress;
                 const petType = "0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c::pet_nft::PetNFT";
                 const ownedPetsRes: any = await window.electronAPI.suiRpcCall("suix_getOwnedObjects", [
                   userAddr,
@@ -1731,13 +1899,104 @@ async function handleLocalChat(userText: string) {
 
                 maybeAppendLevelUp(tx);
 
-                await client.signAndExecuteTransaction({ signer: keypair, transaction: tx });
+                await executeTransactionWithWallet(client, tx, savedSettings);
                 toolResult = `✅ Đã tặng ${amount} SUI kèm lời nhắn "${msgText}" thành công! 🎁🎉`;
               }
             }
           } catch (e: any) {
-            toolResult = friendlyError(e.message || e.toString(), 'Tặng quà');
+            toolResult = friendlyError(e.message || e.toString(), 'Gift');
           }
+        }
+      } else if (fnName === "rename_pet") {
+        if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
+          toolResult = tt("walletNotSynced");
+        } else {
+          try {
+            const newName = (args.new_name || args.name || "").toString().trim();
+            if (!newName) {
+              toolResult = "❌ Thiếu tên mới cho pet!";
+            } else if (newName.length > 32) {
+              toolResult = "❌ Tên mới quá dài (tối đa 32 ký tự)!";
+            } else {
+              const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } = await import('@mysten/sui/jsonRpc');
+              const { Transaction } = await import('@mysten/sui/transactions');
+              const client = new SuiJsonRpcClient({ url: getJsonRpcFullnodeUrl('testnet'), network: 'testnet' });
+
+              const PKG = "0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c";
+              const CONFIG_ID = "0xc5345d14d5abd2b26014d8ce6f190349eb587d385593429d25f65dfdc067a958";
+              const TOKEN_TYPE = "0xf20998a7f30a94ead030ad6528899aafff4693900fb4b547f59882615a0c24a4::pet_token::PET_TOKEN";
+
+              // 1. Tìm PetNFT của người dùng
+              let petObjectId = "";
+              if (activePetConfig?.slug && activePetConfig.slug.startsWith("nft-")) {
+                petObjectId = activePetConfig.slug.substring(4);
+              } else {
+                const petType = `${PKG}::pet_nft::PetNFT`;
+                const ownedPetsRes: any = await window.electronAPI.suiRpcCall("suix_getOwnedObjects", [
+                  savedSettings.suiAddress,
+                  { filter: { StructType: petType } }
+                ], "https://fullnode.testnet.sui.io:443");
+                if (ownedPetsRes?.result?.data && ownedPetsRes.result.data.length > 0) {
+                  petObjectId = ownedPetsRes.result.data[0].data.objectId;
+                }
+              }
+
+              if (!petObjectId) {
+                toolResult = "❌ Bạn cần sở hữu ít nhất 1 MiniPet NFT để đổi tên. Đúc pet trước nhé!";
+              } else {
+                // 2. Gom Coin<PET_TOKEN> để trả phí đổi tên
+                const coinsRes: any = await window.electronAPI.suiRpcCall("suix_getCoins", [
+                  savedSettings.suiAddress, TOKEN_TYPE
+                ], "https://fullnode.testnet.sui.io:443");
+                const coins = coinsRes?.result?.data || [];
+                if (coins.length === 0) {
+                  toolResult = "❌ Không có MIPET trong ví để trả phí đổi tên!";
+                } else {
+                  const tx = new Transaction();
+                  const primaryCoin = coins[0].coinObjectId;
+                  if (coins.length > 1) {
+                    tx.mergeCoins(tx.object(primaryCoin), coins.slice(1).map((c: any) => tx.object(c.coinObjectId)));
+                  }
+                  tx.moveCall({
+                    target: `${PKG}::pet_nft::rename_pet`,
+                    arguments: [
+                      tx.object(CONFIG_ID),
+                      tx.object(petObjectId),
+                      tx.object(primaryCoin),
+                      tx.pure.vector('u8', Array.from(new TextEncoder().encode(newName)))
+                    ]
+                  });
+                  await executeTransactionWithWallet(client, tx, savedSettings);
+                  toolResult = `✅ Đã đổi tên pet thành "${newName}"! ✨`;
+                }
+              }
+            }
+          } catch (e: any) {
+            toolResult = friendlyError(e.message || e.toString(), 'Rename');
+          }
+        }
+      } else if (fnName === "check_pet_stats") {
+        try {
+          const PKG = "0x924f6dc9f3ea41d59c8c29aee26808fa830e68cfc84e11542836bb1b7ad5280c";
+          if (!savedSettings.suiAddress) {
+            toolResult = "❌ Chưa cấu hình ví. Vào Settings để thiết lập nhé!";
+          } else {
+            const petType = `${PKG}::pet_nft::PetNFT`;
+            const ownedRes: any = await window.electronAPI.suiRpcCall("suix_getOwnedObjects", [
+              savedSettings.suiAddress,
+              { filter: { StructType: petType }, options: { showContent: true } }
+            ], "https://fullnode.testnet.sui.io:443");
+            const data = ownedRes?.result?.data || [];
+            if (data.length === 0) {
+              toolResult = "❌ Bạn chưa sở hữu MiniPet NFT nào. Hãy đúc pet trước nhé!";
+            } else {
+              const f = data[0]?.data?.content?.fields || {};
+              const name = f.name || 'Pet';
+              toolResult = `📊 ${name} — Cấp ${f.level ?? '?'}, EXP ${f.experience ?? '?'}, Vui vẻ ${f.happiness ?? '?'}/100, Độ hiếm ${f.rarity ?? '?'}, Hoàn hảo ${f.perfection_score ?? '?'}.`;
+            }
+          }
+        } catch {
+          toolResult = "❌ Không thể đọc chỉ số pet! Lỗi kết nối mạng, thử lại sau.";
         }
       } else {
         toolResult = "❌ Tớ chưa biết thực hiện lệnh này!";

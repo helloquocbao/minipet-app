@@ -386,13 +386,15 @@ pub fn broadcast_pet_event(app: AppHandle, event: String, payload: serde_json::V
     let allowed_static = [
         "pet:start-alarm", "pomo:tick", "pomo:finished", "pet:eat",
         "pet:someone-speaking", "pet:ping", "pet:say",
-        "global:chat-active",
+        "global:chat-active", "wallet:suggest-sync",
     ];
     let allowed_prefixes = [
         "update-speech-",
         "chat-mode-",
         "chat-mode-toggle-",
+        "chat-reply-",
         "user-chat-submit-",
+        "speech-button-",
     ];
 
     let is_allowed = allowed_static.contains(&event.as_str())
@@ -451,14 +453,15 @@ pub async fn get_browser_url(browser: String) -> Result<Option<String>, String> 
 #[tauri::command]
 pub async fn generate_agent_keypair(
     state: State<'_, AppState>,
+    force: Option<bool>,
 ) -> Result<String, String> {
     let mut mgr = state.pet_manager.lock().await;
-    
-    // If agent already has an address, return it
-    if !mgr.settings.agent_address.is_empty() {
-        return Ok(mgr.settings.agent_address.clone());
+
+    // Reuse existing key unless force=true
+    if !mgr.settings.agent_secret_key.is_empty() && force != Some(true) {
+        return Ok(mgr.settings.agent_secret_key.clone());
     }
-    
+
     // Generate a random 32-byte Ed25519 secret key
     let secret_bytes: [u8; 32] = {
         let mut rng = rand::thread_rng();
@@ -466,13 +469,13 @@ pub async fn generate_agent_keypair(
         rng.fill(&mut bytes);
         bytes
     };
-    
+
     // Encode as base64 for storage (frontend will derive address from it)
     let secret_b64 = base64_encode(&secret_bytes);
-    
+
     mgr.settings.agent_secret_key = secret_b64.clone();
     mgr.save_settings().await;
-    
+
     // Return the secret key — frontend will derive the address
     Ok(secret_b64)
 }
@@ -481,14 +484,22 @@ pub async fn generate_agent_keypair(
 pub fn check_model_exists(app: AppHandle) -> bool {
     let app_data_dir = app.path().app_data_dir().unwrap();
     let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
-    // File must be at least 900MB — the real model is ~986MB.
-    // Anything smaller means the download was incomplete or corrupt.
-    const MIN_VALID_SIZE: u64 = 900 * 1024 * 1024; // 900 MB
+    const MIN_VALID_SIZE: u64 = 900 * 1024 * 1024;
     if let Ok(meta) = std::fs::metadata(&model_path) {
         meta.len() >= MIN_VALID_SIZE
     } else {
         false
     }
+}
+
+#[tauri::command]
+pub fn delete_model(app: AppHandle) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
+    if model_path.exists() {
+        std::fs::remove_file(&model_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

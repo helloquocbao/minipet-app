@@ -153,6 +153,8 @@ export async function initSettings(): Promise<void> {
     refreshUI();
     setupGlobalEventListeners();
     setupTabs();
+    setupAutoTradeTab();
+    setupAgentWallet();
     void setupPomodoro(settings.language || 'en');
 
     // Unified settings update listener
@@ -404,16 +406,7 @@ function setupGlobalEventListeners() {
     void refreshSuiActivity();
   });
 
-  const handleWalletModeChange = (e: Event) => {
-    void (async () => {
-    const target = e.target as HTMLInputElement;
-    if (target.checked) {
-      await api.updateSettings({ walletMode: target.value });
-    }
-    })();
-  };
-  document.getElementById('mode-agent')?.addEventListener('change', handleWalletModeChange);
-  document.getElementById('mode-zklogin')?.addEventListener('change', handleWalletModeChange);
+
 
   document.getElementById('sui-enabled-toggle')?.addEventListener('change', (e) => {
     void (async () => {
@@ -465,13 +458,7 @@ function setupGlobalEventListeners() {
       showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
     }
   });
-  document.getElementById('copy-agent-address-btn')?.addEventListener('click', () => {
-    const val = (document.getElementById('agent-address-input') as HTMLInputElement)?.value.trim();
-    if (val) {
-      void navigator.clipboard.writeText(val);
-      showToast(translations[currentSettings?.language as Language || 'en'].addressCopied || 'Address copied!');
-    }
-  });
+
   document.getElementById('check-wallet-btn')?.addEventListener('click', () => {
     void refreshSuiBalance();
     void refreshSuiAssets();
@@ -528,6 +515,60 @@ function setupGlobalEventListeners() {
   });
 
   document.getElementById('ping-pet-btn')?.addEventListener('click', () => api.pingPet());
+
+  // --- Brain (AI Model) Management ---
+  const brainStatus = document.getElementById('brain-status');
+  const downloadBrainBtn = document.getElementById('download-brain-btn') as HTMLButtonElement;
+  const deleteBrainBtn = document.getElementById('delete-brain-btn') as HTMLButtonElement;
+
+  async function refreshBrainStatus() {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const exists = await invoke<boolean>('check_model_exists');
+    if (brainStatus) brainStatus.textContent = exists ? '✅ 986MB' : '';
+    if (downloadBrainBtn) downloadBrainBtn.style.display = exists ? 'none' : 'inline-flex';
+    if (deleteBrainBtn) deleteBrainBtn.style.display = exists ? 'inline-flex' : 'none';
+  }
+
+  void refreshBrainStatus();
+
+  downloadBrainBtn?.addEventListener('click', () => {
+    void (async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { listen } = await import('@tauri-apps/api/event');
+      downloadBrainBtn.disabled = true;
+      downloadBrainBtn.textContent = '⏳ ...';
+      if (brainStatus) brainStatus.textContent = '0%';
+      try {
+        const unlisten = await listen('model-download-progress', (event: any) => {
+          const p = event.payload as any;
+          const pct = p.progress?.toFixed(1) || '0';
+          if (brainStatus) brainStatus.textContent = `${pct}%`;
+        });
+        await invoke('download_model');
+        unlisten();
+        showToast('Brain downloaded successfully! 🧠');
+      } catch (err: any) {
+        showToast(`Download failed: ${err?.message || err}`, 'error');
+      }
+      downloadBrainBtn.disabled = false;
+      downloadBrainBtn.textContent = '⬇️ Download';
+      void refreshBrainStatus();
+    })();
+  });
+
+  deleteBrainBtn?.addEventListener('click', () => {
+    void (async () => {
+      const lang = currentSettings?.language || 'en';
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        await invoke('delete_model');
+        showToast(lang === 'vi' ? 'Đã xóa bộ não AI!' : 'AI brain deleted!');
+      } catch (err: any) {
+        showToast(`Delete failed: ${err?.message || err}`, 'error');
+      }
+      void refreshBrainStatus();
+    })();
+  });
 
   const addWhitelistBtn = document.getElementById('add-whitelist-btn');
   const whitelistAliasInput = document.getElementById('whitelist-alias-input') as HTMLInputElement;
@@ -593,8 +634,6 @@ function populateForm(settings: UserSettings): void {
   const suiAddr = document.getElementById('sui-address-input') as HTMLInputElement;
   const aiToggle = document.getElementById('ai-enabled-toggle') as HTMLInputElement;
   const geminiApiKeyInp = document.getElementById('gemini-api-key-input') as HTMLInputElement;
-  const agentAddressInp = document.getElementById('agent-address-input') as HTMLInputElement;
-
   // Cập nhật trực tiếp trạng thái UI từ settings thực tế
   updateAiStatusUI(settings.aiEnabled || false);
   updateSuiStatusUI(settings.suiEnabled || false);
@@ -604,39 +643,6 @@ function populateForm(settings: UserSettings): void {
   }
   if (geminiApiKeyInp && document.activeElement !== geminiApiKeyInp) {
     geminiApiKeyInp.value = settings.geminiApiKey || '';
-  }
-  if (agentAddressInp) {
-    if (settings.agentAddress) {
-      agentAddressInp.value = settings.agentAddress;
-    } else {
-      // Generate keypair on the Rust backend, then derive address on frontend
-      void import('@tauri-apps/api/core').then(({ invoke: tauriInvoke }) => {
-        void tauriInvoke('generate_agent_keypair').then((secretB64: any) => {
-          void (async () => {
-          if (secretB64) {
-            try {
-              const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
-              // Decode base64 to derive address
-              const binaryStr = atob(secretB64);
-              const bytes = new Uint8Array(binaryStr.length);
-              for (let i = 0; i < binaryStr.length; i++) {
-                bytes[i] = binaryStr.charCodeAt(i);
-              }
-              const kp = Ed25519Keypair.fromSecretKey(bytes);
-              const address = kp.toSuiAddress();
-              agentAddressInp.value = address;
-              (window as any).electronAPI.updateSettings({
-                agentAddress: address,
-                agentSecretKey: kp.getSecretKey()
-              });
-            } catch (err) {
-              console.error('Failed to derive agent address:', err);
-            }
-          }
-          })();
-        }).catch((err: any) => console.error('Failed to generate agent keypair:', err));
-      });
-    }
   }
 
   if (suiToggle) {
@@ -658,35 +664,12 @@ function populateForm(settings: UserSettings): void {
   if (syncBtn) syncBtn.style.display = hasWallet ? 'none' : 'flex';
   if (disconnectBtn) disconnectBtn.style.display = hasWallet ? 'flex' : 'none';
 
-  const modeAgent = document.getElementById('mode-agent') as HTMLInputElement;
-  const modeZklogin = document.getElementById('mode-zklogin') as HTMLInputElement;
-  const modeZkloginLabel = document.getElementById('mode-zklogin-label');
-  const modeZkloginText = document.getElementById('mode-zklogin-text');
 
-  if ((settings as any).zkLoginSession) {
-    if (modeZklogin) modeZklogin.disabled = false;
-    if (modeZkloginLabel) modeZkloginLabel.title = '';
-    if (modeZkloginText) {
-      modeZkloginText.textContent = 'zkLogin Wallet (Synced)';
-      modeZkloginText.style.color = '#4ade80';
-    }
-  } else {
-    if (modeZklogin) modeZklogin.disabled = true;
-    if (modeZkloginLabel) modeZkloginLabel.title = 'Sync zkLogin from Browser first';
-    if (modeZkloginText) {
-      modeZkloginText.textContent = 'zkLogin Wallet (Not Synced)';
-      modeZkloginText.style.color = '';
-      modeZkloginText.style.opacity = '0.45';
-    }
-  }
-
-  if ((settings as any).walletMode === 'zklogin' && (settings as any).zkLoginSession) {
-    if (modeZklogin) modeZklogin.checked = true;
-  } else {
-    if (modeAgent) modeAgent.checked = true;
-  }
 
   renderFastTransferList(settings);
+
+  // Reflect agent wallet address + trading wallet preview
+  updateAgentWalletUI();
 }
 
 function renderFastTransferList(settings: any) {
@@ -923,6 +906,137 @@ async function refreshSuiActivity() {
   }
 }
 
+async function refreshAgentBalance(): Promise<void> {
+  const api = (window as any).electronAPI;
+  const display = document.getElementById('agent-balance-display');
+  const addr = currentSettings?.agentAddress
+    || (document.getElementById('agent-address-input') as HTMLInputElement)?.value.trim();
+
+  if (!display) return;
+  if (!addr || !addr.startsWith('0x') || addr.length < 64) {
+    display.textContent = '0.000 SUI';
+    return;
+  }
+
+  display.textContent = '...';
+  try {
+    const response: any = await api.suiRpcCall('suix_getBalance', [addr, '0x2::sui::SUI'], SUI_CONFIG.RPC_URL);
+    if (response.error) throw new Error(response.error.message || 'RPC Error');
+    const totalBalance = BigInt(response.result?.totalBalance || '0');
+    const amount = Number(totalBalance) / 1_000_000_000;
+    display.textContent = `${amount.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} SUI`;
+  } catch (err) {
+    console.error('[Settings] Agent balance fetch error:', err);
+    display.textContent = '0.000 SUI';
+  }
+}
+
+/** Returns the active trading wallet address based on the auto-trade dropdown selection. */
+function getTradeWalletAddress(): string {
+  const sel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
+  if (sel === 'zklogin') return currentSettings?.suiAddress || '';
+  return currentSettings?.agentAddress || '';
+}
+
+/** Updates the read-only address preview next to the trading wallet dropdown. */
+function updateTradeWalletAddress(): void {
+  const span = document.getElementById('trade-wallet-address');
+  if (!span) return;
+  const addr = getTradeWalletAddress();
+  if (addr && addr.startsWith('0x')) {
+    span.textContent = `${addr.slice(0, 10)}...${addr.slice(-6)}`;
+    span.style.color = 'var(--accent)';
+    span.title = addr;
+  } else {
+    const sel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
+    const lang = currentSettings?.language as Language || 'en';
+    const t = translations[lang];
+    span.textContent = sel === 'agent' ? (t.tradingWalletNotSet || 'Not configured') : (t.tradingWalletNotSet || 'Not configured');
+    span.style.color = 'var(--text-muted)';
+    span.title = '';
+  }
+}
+
+function updateAgentWalletUI(): void {
+  const addrInput = document.getElementById('agent-address-input') as HTMLInputElement;
+  const generateBtn = document.getElementById('generate-agent-btn') as HTMLButtonElement;
+  const addr = currentSettings?.agentAddress || '';
+
+  if (addrInput && document.activeElement !== addrInput) {
+    addrInput.value = addr;
+  }
+  if (generateBtn && !generateBtn.disabled) {
+    const lang = currentSettings?.language as Language || 'en';
+    const t = translations[lang];
+    generateBtn.textContent = addr && addr.startsWith('0x') ? (t.regenerateAgentBtn || 'Regenerate Agent Wallet') : (t.generateAgentBtn || 'Generate Agent Wallet');
+  }
+  updateTradeWalletAddress();
+}
+
+function setupAgentWallet(): void {
+  const api = (window as any).electronAPI;
+  const generateBtn = document.getElementById('generate-agent-btn') as HTMLButtonElement;
+  const addrInput = document.getElementById('agent-address-input') as HTMLInputElement;
+  const copyBtn = document.getElementById('copy-agent-address-btn');
+
+  updateAgentWalletUI();
+  void refreshAgentBalance();
+
+  generateBtn?.addEventListener('click', () => {
+    void (async () => {
+      if (!api?.generateAgentKeypair) {
+        showToast('Tính năng sinh ví Agent không khả dụng.', 'error');
+        return;
+      }
+      const lang = currentSettings?.language || 'en';
+      const isVi = lang === 'vi';
+      const hasWallet = !!(currentSettings?.agentAddress && currentSettings.agentAddress.startsWith('0x'));
+
+      if (hasWallet) {
+        const { ask } = await import('@tauri-apps/plugin-dialog');
+        const confirmed = await ask(
+          isVi
+            ? 'Ví Agent hiện tại sẽ bị thay thế. Nếu ví đang có SUI, bạn sẽ mất quyền truy cập. Bạn chắc chắn muốn tạo ví mới?'
+            : 'The current Agent wallet will be replaced. If it holds SUI, you will lose access. Are you sure?',
+          { title: isVi ? 'Xác nhận tạo lại ví' : 'Confirm Regenerate', kind: 'warning' }
+        );
+        if (!confirmed) return;
+      }
+
+      generateBtn.disabled = true;
+      generateBtn.textContent = isVi ? 'Đang sinh ví...' : 'Generating...';
+      try {
+        const secretB64: string = await api.generateAgentKeypair(hasWallet);
+        const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519');
+        const secretBytes = Uint8Array.from(atob(secretB64), c => c.charCodeAt(0));
+        const keypair = Ed25519Keypair.fromSecretKey(secretBytes);
+        const address = keypair.getPublicKey().toSuiAddress();
+
+        await api.updateSettings({ agentAddress: address });
+        if (currentSettings) currentSettings.agentAddress = address;
+        if (addrInput) addrInput.value = address;
+
+        showToast(isVi ? 'Đã sinh ví Agent thành công! 🎉' : 'Agent wallet created! 🎉');
+        void refreshAgentBalance();
+      } catch (err: any) {
+        console.error('[Settings] Generate agent wallet failed:', err);
+        showToast((isVi ? 'Sinh ví Agent thất bại: ' : 'Failed to create Agent wallet: ') + (err?.message || err), 'error');
+      } finally {
+        generateBtn.disabled = false;
+        updateAgentWalletUI();
+      }
+    })();
+  });
+
+  copyBtn?.addEventListener('click', () => {
+    const val = addrInput?.value.trim();
+    if (val && val.startsWith('0x')) {
+      void navigator.clipboard.writeText(val);
+      showToast('Đã copy địa chỉ ví Agent!');
+    }
+  });
+}
+
 function setupTabs(): void {
   const tabs = document.querySelectorAll('.nav-item');
   const panels = document.querySelectorAll('.tab-panel');
@@ -944,6 +1058,531 @@ function setupTabs(): void {
       });
     });
   });
+}
+
+let isSimulating = false;
+let simInterval: any = null;
+let simWinRate = 0;
+let simTradesCount = 0;
+let simPnl = 0.0;
+
+function setupAutoTradeTab(): void {
+  const aggrRange = document.getElementById('aggressiveness-range') as HTMLInputElement;
+  const aggrEmoji = document.getElementById('aggressiveness-emoji');
+  const aggrText = document.getElementById('aggressiveness-text');
+
+  const slRange = document.getElementById('sl-range') as HTMLInputElement;
+  const slVal = document.getElementById('sl-value');
+
+  const tpRange = document.getElementById('tp-range') as HTMLInputElement;
+  const tpVal = document.getElementById('tp-value');
+
+  const toggleBtn = document.getElementById('toggle-trade-btn') as HTMLButtonElement;
+  const clearBtn = document.getElementById('clear-terminal-btn');
+  const termLogs = document.getElementById('trade-terminal-logs');
+
+  const tradeStatus = document.getElementById('trade-status');
+  const tradeModeBadge = document.getElementById('trade-mode-badge');
+
+  // Load saved values from localStorage
+  if (aggrRange) {
+    const saved = localStorage.getItem('minipet-trade-aggr') || '2';
+    aggrRange.value = saved;
+    updateAggrUI(parseInt(saved));
+    aggrRange.addEventListener('input', () => {
+      const val = parseInt(aggrRange.value);
+      localStorage.setItem('minipet-trade-aggr', val.toString());
+      updateAggrUI(val);
+    });
+  }
+
+  function updateAggrUI(val: number) {
+    if (!aggrEmoji || !aggrText) return;
+    const stages = [
+      { emoji: '😴', text: 'Thận trọng (Safe)', color: '#16a34a' },
+      { emoji: '⚖️', text: 'Cân bằng (Balanced)', color: '#2563eb' },
+      { emoji: '🚀', text: 'Đột phá (Moonshot)', color: '#6366f1' },
+      { emoji: '🦍', text: 'Degen Ape (High Risk)', color: '#db2777' },
+      { emoji: '💀', text: 'Kamikaze (Extreme)', color: '#dc2626' }
+    ];
+    const stage = stages[val - 1] || stages[1];
+    aggrEmoji.textContent = stage.emoji;
+    aggrText.textContent = stage.text;
+    aggrText.style.color = stage.color;
+  }
+
+  if (slRange && slVal) {
+    const saved = localStorage.getItem('minipet-trade-sl') || '5';
+    slRange.value = saved;
+    slVal.textContent = `${parseFloat(saved).toFixed(1)}%`;
+    slRange.addEventListener('input', () => {
+      slVal.textContent = `${parseFloat(slRange.value).toFixed(1)}%`;
+      localStorage.setItem('minipet-trade-sl', slRange.value);
+    });
+  }
+
+  if (tpRange && tpVal) {
+    const saved = localStorage.getItem('minipet-trade-tp') || '15';
+    tpRange.value = saved;
+    tpVal.textContent = `${parseFloat(saved).toFixed(1)}%`;
+    tpRange.addEventListener('input', () => {
+      tpVal.textContent = `${parseFloat(tpRange.value).toFixed(1)}%`;
+      localStorage.setItem('minipet-trade-tp', tpRange.value);
+    });
+  }
+
+  // Radio triggers for Env
+  const envRadios = document.querySelectorAll('input[name="tradeEnv"]');
+  envRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const val = (e.target as HTMLInputElement).value;
+      if (tradeModeBadge) {
+        if (val === 'real') {
+          tradeModeBadge.textContent = 'REAL SUI (Mainnet)';
+          tradeModeBadge.setAttribute('data-state', 'real');
+        } else {
+          tradeModeBadge.textContent = 'Paper Testing';
+          tradeModeBadge.setAttribute('data-state', 'paper');
+        }
+      }
+    });
+  });
+
+  // Load other inputs from localstorage
+  const inputs = ['trade-slippage', 'trade-budget', 'trade-cooldown', 'trade-provider-select', 'trade-exchange-select'];
+  inputs.forEach(id => {
+    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement;
+    if (el) {
+      const saved = localStorage.getItem(`minipet-trade-${id}`);
+      if (saved) el.value = saved;
+      el.addEventListener('change', () => {
+        localStorage.setItem(`minipet-trade-${id}`, el.value);
+        if (id === 'trade-exchange-select') {
+          updateExchangeFields();
+        }
+      });
+      // also listener for input just in case
+      el.addEventListener('input', () => {
+        localStorage.setItem(`minipet-trade-${id}`, el.value);
+      });
+    }
+  });
+
+  const exchangeSelect = document.getElementById('trade-exchange-select') as HTMLSelectElement;
+  const apiInfoGroup = document.getElementById('exchange-api-info-group');
+  const dexInfoGroup = document.getElementById('exchange-dex-info-group');
+  const apiKeyInput = document.getElementById('exchange-api-key') as HTMLInputElement;
+  const apiSecretInput = document.getElementById('exchange-api-secret') as HTMLInputElement;
+  const connectBtn = document.getElementById('connect-exchange-btn') as HTMLButtonElement;
+
+  function updateExchangeFields() {
+    if (!exchangeSelect) return;
+    const val = exchangeSelect.value;
+    const isCex = ['binance', 'okx', 'bybit'].includes(val);
+
+    if (isCex) {
+      if (apiInfoGroup) apiInfoGroup.style.display = 'block';
+      if (dexInfoGroup) dexInfoGroup.style.display = 'none';
+
+      // Load keys
+      const savedKey = localStorage.getItem(`minipet-trade-api-key-${val}`) || '';
+      const savedSecret = localStorage.getItem(`minipet-trade-api-secret-${val}`) || '';
+      if (apiKeyInput) apiKeyInput.value = savedKey;
+      if (apiSecretInput) apiSecretInput.value = savedSecret;
+
+      if (connectBtn) {
+        if (savedKey && savedSecret) {
+          connectBtn.textContent = 'Đã kết nối';
+          connectBtn.style.background = 'var(--green)';
+        } else {
+          connectBtn.textContent = 'Kết nối';
+          connectBtn.style.background = 'var(--accent)';
+        }
+      }
+    } else {
+      if (apiInfoGroup) apiInfoGroup.style.display = 'none';
+      if (dexInfoGroup) dexInfoGroup.style.display = 'flex';
+    }
+  }
+
+  // Initialize exchange fields on start
+  updateExchangeFields();
+
+  // Trading wallet selector (Agent vs zkLogin)
+  const walletSelect = document.getElementById('trade-wallet-select') as HTMLSelectElement;
+  if (walletSelect) {
+    const savedWallet = localStorage.getItem('minipet-trade-wallet') || 'agent';
+    walletSelect.value = savedWallet;
+    updateTradeWalletAddress();
+    walletSelect.addEventListener('change', () => {
+      localStorage.setItem('minipet-trade-wallet', walletSelect.value);
+      updateTradeWalletAddress();
+    });
+  }
+
+  if (connectBtn) {
+    connectBtn.addEventListener('click', () => {
+      if (!exchangeSelect) return;
+      const val = exchangeSelect.value;
+      const key = apiKeyInput?.value.trim() || '';
+      const secret = apiSecretInput?.value.trim() || '';
+
+      if (!key || !secret) {
+        showToast('Vui lòng điền đầy đủ API Key và API Secret!', 'error');
+        return;
+      }
+
+      // Save credentials mock style
+      localStorage.setItem(`minipet-trade-api-key-${val}`, key);
+      localStorage.setItem(`minipet-trade-api-secret-${val}`, secret);
+
+      connectBtn.textContent = 'Đã kết nối';
+      connectBtn.style.background = 'var(--green)';
+      showToast(`Đã kết nối API tài khoản ${val.toUpperCase()} thành công!`);
+
+      // Add mock system log in simulation if running
+      addLog('system', `[SYSTEM] [API] Kết nối thành công API ${val.toUpperCase()}. Sẵn sàng giao dịch Spot.`);
+    });
+  }
+
+
+  // Handle mix mode changes and weighted config display
+  const mixModeSelect = document.getElementById('trade-mix-mode') as HTMLSelectElement;
+  const weightedGroup = document.getElementById('weighted-config-group');
+  if (mixModeSelect) {
+    const saved = localStorage.getItem('minipet-trade-mix-mode') || 'consensus';
+    mixModeSelect.value = saved;
+    if (weightedGroup) weightedGroup.style.display = saved === 'weighted' ? 'block' : 'none';
+    
+    mixModeSelect.addEventListener('change', () => {
+      localStorage.setItem('minipet-trade-mix-mode', mixModeSelect.value);
+      if (weightedGroup) weightedGroup.style.display = mixModeSelect.value === 'weighted' ? 'block' : 'none';
+    });
+  }
+
+  // Handle algorithm checkboxes
+  const algoCheckboxes = document.querySelectorAll('input[name="tradeAlgo"]');
+  algoCheckboxes.forEach(cb => {
+    const input = cb as HTMLInputElement;
+    const key = `minipet-trade-algo-${input.value}`;
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      input.checked = saved === 'true';
+    }
+    input.addEventListener('change', () => {
+      localStorage.setItem(key, input.checked.toString());
+      updateAlgoCardStyle(input);
+    });
+    updateAlgoCardStyle(input);
+  });
+
+  function updateAlgoCardStyle(input: HTMLInputElement) {
+    const card = input.closest('.algo-checkbox-card') as HTMLElement;
+    if (card) {
+      if (input.checked) {
+        card.style.borderColor = 'var(--accent)';
+        card.style.boxShadow = '0 0 8px var(--accent-glow)';
+        card.style.background = 'var(--accent-soft)';
+      } else {
+        card.style.borderColor = 'var(--border)';
+        card.style.boxShadow = 'none';
+        card.style.background = 'var(--bg-elevated)';
+      }
+    }
+  }
+
+  function getSelectedAlgos(): string[] {
+    const list: string[] = [];
+    document.querySelectorAll('input[name="tradeAlgo"]:checked').forEach(el => {
+      list.push((el as HTMLInputElement).value.toUpperCase());
+    });
+    return list;
+  }
+
+
+
+  // Toggle Bot Simulation
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      if (isSimulating) {
+        stopSimulation();
+      } else {
+        // Check if user has a Pet NFT before allowing trade
+        const hasNftPet = cachedPetList.some(p => p.slug.startsWith('nft-'));
+        if (!hasNftPet) {
+          const lang = currentSettings?.language as Language || 'en';
+          const isVi = lang === 'vi';
+          showToast(isVi
+            ? 'Bạn cần kết nối ví có Pet NFT on-chain để sử dụng AI Agent Trade!'
+            : 'You need a synced wallet with at least 1 Pet NFT to use AI Agent Trade!', 'error');
+          return;
+        }
+        startSimulation();
+      }
+    });
+  }
+
+  if (clearBtn && termLogs) {
+    clearBtn.addEventListener('click', () => {
+      termLogs.innerHTML = `<div style="color: #6272a4;">[SYSTEM] Logs cleared. Bot status: ${isSimulating ? 'Active' : 'Inactive'}</div>`;
+    });
+  }
+
+  function startSimulation() {
+    isSimulating = true;
+    const lang = currentSettings?.language as Language || 'en';
+    const t = translations[lang];
+    if (tradeStatus) {
+      tradeStatus.textContent = t.botRunning || 'Bot Running';
+      tradeStatus.setAttribute('data-state', 'on');
+    }
+    if (toggleBtn) {
+      toggleBtn.textContent = t.stopAutoTrade || 'Stop Auto-Trade';
+      toggleBtn.style.background = 'var(--red)';
+    }
+
+    const activeAlgos = getSelectedAlgos();
+    const mixMode = mixModeSelect?.value || 'consensus';
+
+    addLog('system', `[SYSTEM] Auto-Trade Engine activated! Signal source: ${getSelectedProviderText()}`);
+    const walletSel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
+    const walletName = walletSel === 'zklogin' ? 'Ví zkLogin (Google Sui)' : 'Ví Agent (On-Device Burner)';
+    const walletAddr = getTradeWalletAddress();
+    if (walletAddr && walletAddr.startsWith('0x')) {
+      addLog('info', `[WALLET] Thực thi lệnh qua ${walletName} · ${walletAddr.slice(0, 8)}...${walletAddr.slice(-4)}`);
+    } else {
+      addLog('system', `[WARNING] ${walletName} chưa được thiết lập! Lệnh sẽ chạy ở chế độ giả lập (paper).`);
+    }
+    addLog('info', `[MIX ENGINE] Algorithms selected: [${activeAlgos.join(', ') || 'NONE'}], Mode: ${mixMode.toUpperCase()}`);
+    addLog('info', `[AI ENGINE] Analysing market conditions... Aggressiveness level: ${aggrRange?.value || 2}`);
+    
+    // Reset stats slightly
+    simTradesCount = 0;
+    simWinRate = 0;
+    simPnl = 0.0;
+    updateStatsUI();
+
+    // Trigger pet speak
+    void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
+      text: "Khởi động Auto-Trade! Em sẽ giả lập cày tiền cho sếp nhé.",
+      priority: true
+    });
+
+    const simulationTick = () => {
+      const actions = ['scan', 'scan', 'buy', 'hold', 'sell', 'win'];
+      const action = actions[Math.floor(Math.random() * actions.length)];
+      
+      const coins = ['SUI', 'CETUS', 'SEND', 'FUD', 'HAWK', 'HIPPO', 'PET'];
+      const coin = coins[Math.floor(Math.random() * coins.length)];
+      const budget = parseFloat((document.getElementById('trade-budget') as HTMLInputElement)?.value || '5');
+      const currentAlgos = getSelectedAlgos();
+
+      const provider = (document.getElementById('trade-provider-select') as HTMLSelectElement)?.value || 'pet-ai';
+      const exchangeEl = document.getElementById('trade-exchange-select') as HTMLSelectElement;
+      const exchangeVal = exchangeEl?.value || 'cetus';
+      const exchangeName = exchangeEl?.options[exchangeEl.selectedIndex]?.text || 'Cetus Protocol';
+      
+      const isCex = ['binance', 'okx', 'bybit'].includes(exchangeVal);
+      const apiKey = localStorage.getItem(`minipet-trade-api-key-${exchangeVal}`);
+      const exPrefix = isCex ? `[API ${exchangeVal.toUpperCase()}]` : `[${exchangeVal.toUpperCase()}]`;
+
+      if (action === 'scan') {
+        let scans = [
+          `[SCAN] Quét thanh khoản pool ${coin}/SUI trên Cetus Protocol...`,
+          `[SENTIMENT] Chỉ số mạng xã hội (X/Twitter) của $${coin} tăng đột biến!`,
+          `[MONITOR] Agent đang theo dõi ví whale 0x4a8d... vừa nạp $${coin}.`
+        ];
+        if (provider === 'deepbook' || exchangeVal === 'deepbook') {
+          scans = [
+            `[DEEPBOOK] Đang quét sổ lệnh (Orderbook) cặp giao dịch SUI/${coin}...`,
+            `[DEEPBOOK] Tìm thấy tường mua (Bid Wall) lớn của whale tại mức giá tốt...`,
+            `[DEEPBOOK] Đang đo độ sâu thị trường (Market Depth) trên DeepBook CLOB...`
+          ];
+        }
+        addLog('scan', scans[Math.floor(Math.random() * scans.length)]);
+      } else if (action === 'buy') {
+        if (currentAlgos.length === 0) {
+          addLog('system', `[WARNING] Không có thuật toán nào được chọn để giao dịch! Vui lòng chọn ít nhất 1.`);
+          return;
+        }
+
+        if (isCex && !apiKey) {
+          addLog('system', `[WARNING] Chưa cấu hình API cho ${exchangeName}! Lệnh giả lập sẽ thực hiện dưới chế độ Testnet/Sandbox.`);
+        }
+
+        // Print algorithm mix logs
+        if (mixMode === 'consensus') {
+          addLog('scan', `[MIX CONSENSUS] Tất cả thuật toán [${currentAlgos.join(', ')}] đồng loạt báo hiệu MUA.`);
+        } else if (mixMode === 'majority') {
+          addLog('scan', `[MIX MAJORITY] Đa số biểu quyết thông qua tín hiệu từ [${currentAlgos.slice(0, Math.ceil(currentAlgos.length / 2 + 0.1)).join(', ')}].`);
+        } else if (mixMode === 'weighted') {
+          const weights = currentAlgos.map(a => `${a}: ${(100 / currentAlgos.length).toFixed(0)}%`);
+          addLog('scan', `[MIX WEIGHTS] Danh mục phân bổ: { ${weights.join(', ')} }. Kích hoạt mua.`);
+        } else {
+          addLog('scan', `[MIX DEGEN] Tín hiệu MUA nhanh từ thuật toán ${currentAlgos[Math.floor(Math.random() * currentAlgos.length)]}.`);
+        }
+
+        if (exchangeVal === 'deepbook') {
+          addLog('buy', `[BUY] ${exPrefix} Khớp lệnh Market Buy ${budget} SUI lấy $${coin} trên sổ lệnh DeepBook CLOB`);
+        } else if (isCex) {
+          addLog('buy', `[BUY] ${exPrefix} Đặt lệnh Mua Spot ${budget} SUI lấy $${coin} thành công via API (Slippage: ${(Math.random() * 0.2 + 0.05).toFixed(2)}%)`);
+        } else {
+          addLog('buy', `[BUY] ${exPrefix} Đã swap ${budget} SUI lấy $${coin} (Slippage: ${(Math.random() * 0.8 + 0.1).toFixed(2)}%)`);
+        }
+        simTradesCount++;
+        updateStatsUI();
+
+        // Trigger pet speak
+        void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
+          text: `[SIMULATION] Em vừa vào lệnh MUA $${coin} trên ${exchangeName} cho sếp.`,
+          priority: true
+        });
+      } else if (action === 'hold') {
+        addLog('info', `[HOLD] ${exPrefix} Đang giữ lệnh $${coin}. Lợi nhuận tức thời: ${(Math.random() * 6 - 2).toFixed(2)}%`);
+      } else if (action === 'sell') {
+        const profit = Math.random() > 0.45;
+        const targetPercent = profit ? parseFloat(tpRange?.value || '15') : -parseFloat(slRange?.value || '5');
+        const finalPnL = (budget * targetPercent / 100) * (Math.random() * 0.4 + 0.8);
+        
+        if (profit) {
+          addLog('win', `[TAKE PROFIT] ${exPrefix} Đã chốt lời $${coin} thành công tại mức +${targetPercent.toFixed(1)}% (Lãi +${finalPnL.toFixed(3)} SUI)`);
+          simPnl += finalPnL;
+
+          // Trigger pet speak
+          void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
+            text: `[SIMULATION] Chốt lời thành công $${coin} trên ${exchangeName} rồi sếp!`,
+            priority: true
+          });
+        } else {
+          addLog('sell', `[STOP LOSS] ${exPrefix} Cắt lỗ tự động $${coin} tại mức ${targetPercent.toFixed(1)}% (Lỗ ${finalPnL.toFixed(3)} SUI)`);
+          simPnl += finalPnL;
+
+          // Trigger pet speak
+          void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
+            text: `[SIMULATION] Đã cắt lỗ tự động $${coin} trên ${exchangeName} để bảo vệ ví.`,
+            priority: true
+          });
+        }
+        simTradesCount++;
+        updateStatsUI();
+      } else {
+        addLog('system', `[AI ANALYST] MiniPet gợi ý tái cơ cấu danh mục đầu tư...`);
+      }
+    };
+
+    // run once immediately
+    simulationTick();
+    simInterval = setInterval(simulationTick, 4000);
+  }
+
+  function stopSimulation() {
+    isSimulating = false;
+    if (simInterval) {
+      clearInterval(simInterval);
+      simInterval = null;
+    }
+    if (tradeStatus) {
+      const lang = currentSettings?.language as Language || 'en';
+      const t = translations[lang];
+      tradeStatus.textContent = t.botStopped || 'Bot Stopped';
+      tradeStatus.setAttribute('data-state', 'off');
+    }
+    if (toggleBtn) {
+      const lang = currentSettings?.language as Language || 'en';
+      const t = translations[lang];
+      toggleBtn.textContent = t.activateAutoTrade || 'Activate Auto-Trade';
+      toggleBtn.style.background = 'var(--accent)';
+    }
+    addLog('system', '[SYSTEM] Auto-Trade Engine deactivated.');
+
+    // Trigger pet speak
+    void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
+      text: "Đã dừng Auto-Trade. Em nghỉ ngơi tí.",
+      priority: true
+    });
+  }
+
+  function getSelectedProviderText(): string {
+    const el = document.getElementById('trade-provider-select') as HTMLSelectElement;
+    return el ? el.options[el.selectedIndex]?.text : 'MiniPet AI';
+  }
+
+  function addLog(type: string, text: string) {
+    if (!termLogs) return;
+    const line = document.createElement('div');
+    line.className = `term-line ${type}`;
+    if (type === 'system') {
+      line.style.color = '#6272a4';
+      line.style.fontStyle = 'italic';
+    } else if (type === 'info') {
+      line.style.color = '#8be9fd';
+    } else if (type === 'buy') {
+      line.style.color = '#50fa7b';
+      line.style.fontWeight = '500';
+    } else if (type === 'sell') {
+      line.style.color = '#ff5555';
+      line.style.fontWeight = '500';
+    } else if (type === 'win') {
+      line.style.color = '#ff79c6';
+      line.style.background = 'rgba(255, 121, 198, 0.1)';
+    } else if (type === 'scan') {
+      line.style.color = '#f1fa8c';
+    }
+    const time = new Date().toLocaleTimeString();
+    const cleanText = text.replace(/^\[SIMULATION\]\s*/i, '');
+    line.textContent = `[${time}] [SIMULATION] ${cleanText}`;
+    termLogs.appendChild(line);
+    termLogs.scrollTop = termLogs.scrollHeight;
+
+    // Limit to 100 logs
+    while (termLogs.children.length > 100 && termLogs.firstChild) {
+      termLogs.removeChild(termLogs.firstChild);
+    }
+  }
+
+  function updateStatsUI() {
+    const wrEl = document.getElementById('sim-winrate');
+    const countEl = document.getElementById('sim-count');
+    const pnlEl = document.getElementById('sim-pnl');
+    const pnlPill = document.getElementById('sim-pnl-pill');
+
+    if (countEl) countEl.textContent = simTradesCount.toString();
+    
+    // Simulate win rate based on positive PnL or random
+    if (simTradesCount > 0) {
+      const baseWinRate = simPnl >= 0 ? 60 + Math.floor(Math.random() * 20) : 35 + Math.floor(Math.random() * 15);
+      simWinRate = Math.min(100, maxZero(baseWinRate));
+    } else {
+      simWinRate = 0;
+    }
+
+    function maxZero(num: number) {
+      return num > 0 ? num : 0;
+    }
+
+    if (wrEl) {
+      wrEl.textContent = `${simWinRate}%`;
+      wrEl.className = simWinRate >= 50 ? 'stat-num text-green' : 'stat-num text-red';
+    }
+
+    if (pnlEl) {
+      const prefix = simPnl >= 0 ? '+' : '';
+      pnlEl.textContent = `${prefix}${simPnl.toFixed(3)} SUI`;
+      pnlEl.className = simPnl >= 0 ? 'text-green' : 'text-red';
+    }
+
+    if (pnlPill) {
+      if (simPnl >= 0) {
+        pnlPill.style.background = 'rgba(34, 197, 94, 0.1)';
+        pnlPill.style.color = 'var(--green)';
+        pnlPill.style.borderColor = 'rgba(34, 197, 94, 0.2)';
+      } else {
+        pnlPill.style.background = 'rgba(239, 68, 68, 0.1)';
+        pnlPill.style.color = 'var(--red)';
+        pnlPill.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+      }
+    }
+  }
 }
 
 async function setupPomodoro(lang: Language): Promise<void> {
