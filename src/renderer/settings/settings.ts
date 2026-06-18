@@ -1066,6 +1066,10 @@ let simWinRate = 0;
 let simTradesCount = 0;
 let simPnl = 0.0;
 
+// Real AI Agent Trade engine instance
+import { AgentTradeEngine, TradeLog } from '../blockchain/agent-trade';
+let agentTradeEngine: AgentTradeEngine | null = null;
+
 function setupAutoTradeTab(): void {
   const aggrRange = document.getElementById('aggressiveness-range') as HTMLInputElement;
   const aggrEmoji = document.getElementById('aggressiveness-emoji');
@@ -1337,21 +1341,59 @@ function setupAutoTradeTab(): void {
       tradeStatus.setAttribute('data-state', 'on');
     }
     if (toggleBtn) {
-      toggleBtn.textContent = t.stopAutoTrade || 'Stop Auto-Trade';
+      toggleBtn.textContent = t.stopAutoTrade || 'Stop AI Agent';
       toggleBtn.style.background = 'var(--red)';
     }
 
+    const envReal = (document.getElementById('env-real') as HTMLInputElement)?.checked;
+    const walletSel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
+    const agentKey = currentSettings?.agentSecretKey;
+
+    // Real mode: use AgentTradeEngine with on-chain execution
+    // Works with either agent wallet or zkLogin (based on dropdown)
+    if (envReal) {
+      const signingKey = walletSel === 'agent' ? agentKey : null;
+      if (walletSel === 'agent' && !agentKey) {
+        addLog('system', t.noSigningMethod || '[ERROR] No agent wallet. Generate one in Settings first.');
+        isSimulating = false;
+        return;
+      }
+      // For zkLogin: needs session (not yet implemented in trade engine)
+      if (walletSel === 'zklogin' && !currentSettings?.zkLoginSession) {
+        addLog('system', t.walletNotSynced || '[ERROR] zkLogin session missing. Sync from browser first.');
+        isSimulating = false;
+        return;
+      }
+
+      const budget = parseFloat((document.getElementById('trade-budget') as HTMLInputElement)?.value || '5');
+      const cooldown = parseInt((document.getElementById('trade-cooldown') as HTMLInputElement)?.value || '15') * 60 * 1000;
+      const slippage = parseFloat((document.getElementById('trade-slippage') as HTMLInputElement)?.value || '1');
+
+      agentTradeEngine = new AgentTradeEngine(
+        { budgetSui: budget, cooldownMs: cooldown, slippagePct: slippage, agentSecretKey: signingKey || '' },
+        (log: TradeLog) => {
+          const typeMap: Record<string, string> = { BUY: 'buy', SELL: 'sell', HOLD: 'info', SIGNAL: 'scan', ERROR: 'system' };
+          addLog(typeMap[log.action] || 'info', log.message);
+          if (log.action === 'BUY' || log.action === 'SELL') {
+            simTradesCount++;
+            updateStatsUI();
+          }
+        }
+      );
+      agentTradeEngine.start();
+      addLog('system', `[SYSTEM] 🔴 REAL MODE — AI Agent Trade started.`);
+      addLog('info', `[WALLET] ${walletSel === 'zklogin' ? 'zkLogin' : 'Agent'} · ${getTradeWalletAddress()?.slice(0, 10)}...`);
+      return;
+    }
+
+    // Paper mode: simulated trading
     const activeAlgos = getSelectedAlgos();
     const mixMode = mixModeSelect?.value || 'consensus';
 
-    addLog('system', `[SYSTEM] Auto-Trade Engine activated! Signal source: ${getSelectedProviderText()}`);
-    const walletSel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
-    const walletName = walletSel === 'zklogin' ? 'Ví zkLogin (Google Sui)' : 'Ví Agent (On-Device Burner)';
+    addLog('system', `[SYSTEM] AI Agent Trade (Paper Mode). Signal: ${getSelectedProviderText()}`);
     const walletAddr = getTradeWalletAddress();
     if (walletAddr && walletAddr.startsWith('0x')) {
-      addLog('info', `[WALLET] Thực thi lệnh qua ${walletName} · ${walletAddr.slice(0, 8)}...${walletAddr.slice(-4)}`);
-    } else {
-      addLog('system', `[WARNING] ${walletName} chưa được thiết lập! Lệnh sẽ chạy ở chế độ giả lập (paper).`);
+      addLog('info', `[WALLET] ${walletAddr.slice(0, 10)}... (paper mode)`);
     }
     addLog('info', `[MIX ENGINE] Algorithms selected: [${activeAlgos.join(', ') || 'NONE'}], Mode: ${mixMode.toUpperCase()}`);
     addLog('info', `[AI ENGINE] Analysing market conditions... Aggressiveness level: ${aggrRange?.value || 2}`);
@@ -1364,7 +1406,7 @@ function setupAutoTradeTab(): void {
 
     // Trigger pet speak
     void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
-      text: "Khởi động Auto-Trade! Em sẽ giả lập cày tiền cho sếp nhé.",
+      text: (currentSettings?.language === 'vi') ? "Khởi động AI Agent Trade! Em sẽ giả lập cày tiền cho sếp nhé." : "AI Agent Trade started! Running in paper mode.",
       priority: true
     });
 
@@ -1434,7 +1476,7 @@ function setupAutoTradeTab(): void {
 
         // Trigger pet speak
         void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
-          text: `[SIMULATION] Em vừa vào lệnh MUA $${coin} trên ${exchangeName} cho sếp.`,
+          text: `[SIMULATION] BUY $${coin} on ${exchangeName}`,
           priority: true
         });
       } else if (action === 'hold') {
@@ -1450,7 +1492,7 @@ function setupAutoTradeTab(): void {
 
           // Trigger pet speak
           void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
-            text: `[SIMULATION] Chốt lời thành công $${coin} trên ${exchangeName} rồi sếp!`,
+            text: `[SIMULATION] Take profit $${coin} on ${exchangeName}! ✅`,
             priority: true
           });
         } else {
@@ -1459,7 +1501,7 @@ function setupAutoTradeTab(): void {
 
           // Trigger pet speak
           void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
-            text: `[SIMULATION] Đã cắt lỗ tự động $${coin} trên ${exchangeName} để bảo vệ ví.`,
+            text: `[SIMULATION] Stop loss $${coin} on ${exchangeName} 🛑`,
             priority: true
           });
         }
@@ -1481,6 +1523,10 @@ function setupAutoTradeTab(): void {
       clearInterval(simInterval);
       simInterval = null;
     }
+    if (agentTradeEngine) {
+      agentTradeEngine.stop();
+      agentTradeEngine = null;
+    }
     if (tradeStatus) {
       const lang = currentSettings?.language as Language || 'en';
       const t = translations[lang];
@@ -1490,14 +1536,13 @@ function setupAutoTradeTab(): void {
     if (toggleBtn) {
       const lang = currentSettings?.language as Language || 'en';
       const t = translations[lang];
-      toggleBtn.textContent = t.activateAutoTrade || 'Activate Auto-Trade';
+      toggleBtn.textContent = t.activateAutoTrade || 'Start AI Agent';
       toggleBtn.style.background = 'var(--accent)';
     }
-    addLog('system', '[SYSTEM] Auto-Trade Engine deactivated.');
+    addLog('system', '[SYSTEM] AI Agent Trade engine stopped.');
 
-    // Trigger pet speak
     void (window as any).electronAPI?.broadcastPetEvent('pet:say', {
-      text: "Đã dừng Auto-Trade. Em nghỉ ngơi tí.",
+      text: (currentSettings?.language === 'vi') ? "Đã dừng AI Agent Trade." : "AI Agent Trade stopped.",
       priority: true
     });
   }
@@ -1530,7 +1575,8 @@ function setupAutoTradeTab(): void {
     }
     const time = new Date().toLocaleTimeString();
     const cleanText = text.replace(/^\[SIMULATION\]\s*/i, '');
-    line.textContent = `[${time}] [SIMULATION] ${cleanText}`;
+    const prefix = agentTradeEngine ? '[LIVE]' : '[SIMULATION]';
+    line.textContent = `[${time}] ${prefix} ${cleanText}`;
     termLogs.appendChild(line);
     termLogs.scrollTop = termLogs.scrollHeight;
 

@@ -44,6 +44,8 @@ export interface UserSettings {
   aiEnabled: boolean;
   fastTransferWallets?: { alias: string; address: string }[];
   agentAddress?: string;
+  agentSecretKey?: string;
+  zkLoginSession?: any;
   /** Simulated auto-trade configuration, keyed by wallet ('pet' | 'agent') */
   autoTrade?: Partial<Record<AutoTradeWallet, AutoTradeConfig>>;
 }
