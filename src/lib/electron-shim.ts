@@ -310,6 +310,7 @@ export function setupElectronShim() {
       ),
 
     // --- Agent Wallet ---
-    generateAgentKeypair: (force?: boolean) => invoke<string>("generate_agent_keypair", { force: !!force }),
+    generateAgentKeypair: (force?: boolean) =>
+      invoke<string>("generate_agent_keypair", { force: !!force }),
   };
 }

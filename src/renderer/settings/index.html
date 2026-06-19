@@ -229,6 +229,29 @@
               </div>
             </div>
 
+            <!-- Active Wallet Selection -->
+            <section class="settings-section">
+              <div class="section-head">
+                <div>
+                  <h3 class="section-title" data-i18n="tradingWalletLabel">Active Wallet</h3>
+                  <p class="section-desc">Select which wallet to use for transactions and AI Agent Trade.</p>
+                </div>
+              </div>
+              <div class="form-stack">
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <select id="trade-wallet-select" class="select-md">
+                      <option value="agent" data-i18n="tradingWalletAgent">Agent Wallet (On-Device)</option>
+                      <option value="zklogin" data-i18n="tradingWalletZklogin">zkLogin Wallet (Google)</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="display: flex; align-items: center;">
+                    <span id="trade-wallet-address" class="input-mono" style="font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <!-- Wallet -->
             <section class="settings-section">
               <div class="section-head">
@@ -362,12 +385,9 @@
                     <div class="form-group">
                       <label class="form-label">Sàn Giao Dịch Thực Thi (Execution Exchange)</label>
                       <select id="trade-exchange-select" class="select-md">
-                        <option value="cetus">Cetus Protocol (Sui DEX) ✅</option>
-                        <option value="aftermath">Aftermath Finance (Sui Aggregator) ✅</option>
-                        <option value="deepbook" disabled>DeepBook CLOB — Coming soon</option>
-                        <option value="binance" disabled>Binance Spot — Coming soon</option>
-                        <option value="okx" disabled>OKX Spot — Coming soon</option>
-                        <option value="bybit" disabled>Bybit Spot — Coming soon</option>
+                        <option value="cetus">Cetus Protocol</option>
+                        <option value="deepbook">DeepBook V3</option>
+                        <option value="bluefin" disabled>Bluefin — Coming soon</option>
                       </select>
                     </div>
                     <div class="form-group" id="exchange-api-info-group" style="display: none;">
@@ -383,20 +403,6 @@
                     <div class="form-group" id="exchange-dex-info-group" style="display: flex; flex-direction: column; justify-content: center;">
                       <label class="form-label" style="opacity: 0;">Thông tin</label>
                       <span style="font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 2;">Sử dụng số dư ví Agent của MiniPet để Swap trực tiếp trên chuỗi.</span>
-                    </div>
-                  </div>
-
-                  <div class="form-grid-2" style="margin-top: 8px;">
-                    <div class="form-group">
-                      <label class="form-label" data-i18n="tradingWalletLabel">Ví Thực Thi Giao Dịch (Trading Wallet)</label>
-                      <select id="trade-wallet-select" class="select-md">
-                        <option value="agent" data-i18n="tradingWalletAgent">Ví Agent (On-Device Burner)</option>
-                        <option value="zklogin" data-i18n="tradingWalletZklogin">Ví zkLogin (Google Sui)</option>
-                      </select>
-                    </div>
-                    <div class="form-group" style="display: flex; flex-direction: column; justify-content: center;">
-                      <label class="form-label" data-i18n="tradingWalletAddress">Địa chỉ ví đang dùng</label>
-                      <span id="trade-wallet-address" class="input-mono" style="font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Chưa thiết lập</span>
                     </div>
                   </div>
                 </div>

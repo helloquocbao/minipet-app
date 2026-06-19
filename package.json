@@ -16,6 +16,7 @@
     "@cetusprotocol/aggregator-sdk": "^1.5.5",
     "@cetusprotocol/sui-clmm-sdk": "^1.4.5",
     "@google/generative-ai": "^0.24.1",
+    "@mysten/deepbook-v3": "^1.5.1",
     "@mysten/sui": "^2.16.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2",

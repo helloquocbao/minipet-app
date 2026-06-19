@@ -33,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             for arg in args {
                 if arg.starts_with("minipet://") {
+                    eprintln!("[DeepLink] Received: {}", arg);
                     let _ = app.emit("single-instance://deep-link", arg);
                     break;
                 }
@@ -130,8 +131,8 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     if let Ok(text) = cb_handle.clipboard().read_text() {
-                        // Skip if text is empty or too long (> 500 chars) to save CPU/RAM
-                        if text.is_empty() || text.len() > 500 {
+                        // Skip if text is empty or too long (> 2000 chars)
+                        if text.is_empty() || text.len() > 2000 {
                             continue;
                         }
 
@@ -141,8 +142,13 @@ pub fn run() {
                         if text != *last_cb {
                             *last_cb = text.clone();
                             let trimmed = text.trim();
+                            // Deep link URL pasted (dev mode fallback)
+                            if trimmed.starts_with("minipet://") {
+                                eprintln!("[Clipboard] Deep link detected: {}", &trimmed[..trimmed.len().min(80)]);
+                                let _ = cb_handle.emit("single-instance://deep-link", trimmed);
+                            }
                             // Check for Object ID (0x + 64 hex) or Coin Type (0x...::...::...)
-                            if (trimmed.starts_with("0x") && trimmed.len() == 66) || 
+                            else if (trimmed.starts_with("0x") && trimmed.len() == 66) || 
                                (trimmed.starts_with("0x") && trimmed.contains("::")) {
                                 let _ = cb_handle.emit("clipboard://sui-address-copied", trimmed);
                             }

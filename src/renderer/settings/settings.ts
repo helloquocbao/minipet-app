@@ -85,10 +85,11 @@ async function loadNftPets(): Promise<PetListItem[]> {
       const imgUrl = fields.image_url || fields.sprite_url || '';
       const level = fields.level || '1';
       const perfection = fields.perfection_score || '0';
+      const rarity = fields.rarity || 'Common';
       
       return {
         slug: `nft-${objectId}`,
-        displayName: name,
+        displayName: `${name} - [${rarity}]`,
         description: `Level: ${level} | Perfection: ${(Number(perfection) / 100).toFixed(2)}%`,
         thumbnailPath: imgUrl,
         isDefault: false,
@@ -944,9 +945,8 @@ function updateTradeWalletAddress(): void {
   if (!span) return;
   const addr = getTradeWalletAddress();
   if (addr && addr.startsWith('0x')) {
-    span.textContent = `${addr.slice(0, 10)}...${addr.slice(-6)}`;
+    span.textContent = addr;
     span.style.color = 'var(--accent)';
-    span.title = addr;
   } else {
     const sel = (document.getElementById('trade-wallet-select') as HTMLSelectElement)?.value || 'agent';
     const lang = currentSettings?.language as Language || 'en';

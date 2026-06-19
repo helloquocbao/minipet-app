@@ -67,7 +67,8 @@
       ]
     },
     "clipboard-manager:default",
-    "deep-link:default"
+    "deep-link:default",
+    "dialog:allow-ask"
 
   ]
 }
