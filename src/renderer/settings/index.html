@@ -262,9 +262,12 @@
                 <span class="balance-tag" id="sui-balance-display">0.000 SUI</span>
               </div>
               <div class="form-stack">
-                <div class="form-grid-2">
+                <div class="form-grid-2" style="grid-template-columns: 1fr;">
                   <div class="form-group">
-                    <label class="form-label" data-i18n="suiAddress">Wallet address</label>
+                    <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+                      <span data-i18n="suiAddress">Wallet address</span>
+                      <button id="sync-browser-btn" class="btn-primary" style="font-size: 11px; padding: 4px 10px;">Sync from browser</button>
+                    </label>
                     <div class="input-group">
                       <input type="text" id="sui-address-input" class="input-mono" placeholder="0x..." readonly />
                       <button id="copy-address-btn" class="input-action" title="Copy">
@@ -272,6 +275,8 @@
                       </button>
                     </div>
                   </div>
+                </div>
+                <div class="form-grid-2" style="grid-template-columns: 1fr;">
                   <div class="form-group">
                     <label class="form-label" data-i18n="aiModelLabel">AI model</label>
                     <div style="display: flex; gap: 8px; align-items: center;">
@@ -289,7 +294,6 @@
                   <a id="explorer-link" href="#" class="link-btn" style="display:none;">View on explorer</a>
                   <div class="action-bar-right">
                     <button id="disconnect-wallet-btn" class="btn-danger-ghost" style="display:none;">Disconnect</button>
-                    <button id="sync-browser-btn" class="btn-primary">Sync from browser</button>
                   </div>
                 </div>
                 <p class="callout">Local AI runs offline. Log in with Google zkLogin from the browser to enable auto-sign for pet commands and auto-trade.</p>
@@ -310,10 +314,11 @@
                   <div class="form-group" style="grid-column: span 2;">
                     <label class="form-label" data-i18n="agentAddressLabel">Địa chỉ ví Agent</label>
                     <div class="input-group">
-                      <input type="text" id="agent-address-input" class="input-mono" placeholder="Chưa khởi tạo ví Agent..." readonly />
+                      <input type="text" id="agent-address-input" class="input-mono" placeholder="Agent wallet not initialized..." readonly style="flex:1;" />
                       <button id="copy-agent-address-btn" class="input-action" title="Copy">
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                       </button>
+                      <button id="reload-agent-balance-btn" class="input-action" title="Reload balance" style="cursor:pointer;">🔄</button>
                     </div>
                   </div>
                 </div>
@@ -357,13 +362,13 @@
             </div>
 
             <div class="form-stack" style="margin-top: 16px; max-width: 800px;">
-              <!-- 1. Nguồn Tín Hiệu & Sàn Giao Dịch -->
+              <!-- 1. Signal Source & Exchange -->
               <section class="settings-section">
                 <h3 class="section-title" data-i18n="signalSourceLabel">⚙️ Nguồn Tín Hiệu & Sàn Giao Dịch</h3>
                 <div class="form-stack">
                   <div class="form-grid-2">
                     <div class="form-group">
-                      <label class="form-label">Provider Tín Hiệu (Signal Source)</label>
+                      <label class="form-label">Signal Provider</label>
                       <select id="trade-provider-select" class="select-md">
                         <option value="pet-ai">MiniPet Core AI Analyst (On-chain/Social Sentiment)</option>
                         <option value="dexscreener">DexScreener Hot Pairs Trend Scanner</option>
@@ -373,17 +378,17 @@
                       </select>
                     </div>
                     <div class="form-group">
-                      <label class="form-label">Môi Trường</label>
+                      <label class="form-label">Environment</label>
                       <div class="segmented">
                         <label><input type="radio" name="tradeEnv" value="paper" id="env-paper" checked><span>Paper Trade (Demo)</span></label>
-                        <label style="opacity: 0.5; cursor: not-allowed;" title="Tính năng Mainnet sắp ra mắt!"><input type="radio" name="tradeEnv" value="real" id="env-real" disabled><span>Real SUI (Mainnet)</span></label>
+                        <label style="opacity: 0.5; cursor: not-allowed;" title="Mainnet coming soon!"><input type="radio" name="tradeEnv" value="real" id="env-real" disabled><span>Real SUI (Mainnet)</span></label>
                       </div>
                     </div>
                   </div>
 
                   <div class="form-grid-2" style="margin-top: 8px;">
                     <div class="form-group">
-                      <label class="form-label">Sàn Giao Dịch Thực Thi (Execution Exchange)</label>
+                      <label class="form-label">Execution Exchange</label>
                       <select id="trade-exchange-select" class="select-md">
                         <option value="cetus">Cetus Protocol</option>
                         <option value="deepbook">DeepBook V3</option>
@@ -391,73 +396,73 @@
                       </select>
                     </div>
                     <div class="form-group" id="exchange-api-info-group" style="display: none;">
-                      <label class="form-label">Cấu hình API kết nối ví sàn</label>
+                      <label class="form-label">Exchange API Configuration</label>
                       <div style="display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; gap: 8px;">
                           <input type="password" id="exchange-api-key" class="input-md" style="flex: 1; min-width: 0;" placeholder="API Key" />
                           <input type="password" id="exchange-api-secret" class="input-md" style="flex: 1; min-width: 0;" placeholder="API Secret" />
                         </div>
-                        <button id="connect-exchange-btn" class="btn-primary" style="width: 100%; padding: 10px 14px; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; border: none; font-weight: 500; white-space: nowrap;">Kết nối</button>
+                        <button id="connect-exchange-btn" class="btn-primary" style="width: 100%; padding: 10px 14px; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; border: none; font-weight: 500; white-space: nowrap;">Connect</button>
                       </div>
                     </div>
                     <div class="form-group" id="exchange-dex-info-group" style="display: flex; flex-direction: column; justify-content: center;">
-                      <label class="form-label" style="opacity: 0;">Thông tin</label>
-                      <span style="font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 2;">Sử dụng số dư ví Agent của MiniPet để Swap trực tiếp trên chuỗi.</span>
+                      <label class="form-label" style="opacity: 0;">Info</label>
+                      <span style="font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 2;">Uses Agent wallet balance to swap directly on-chain.</span>
                     </div>
                   </div>
                 </div>
               </section>
 
-              <!-- 2. Thuật Toán Giao Dịch & Mix Mode -->
+              <!-- 2. Trading Algorithm & Mix Mode -->
               <section class="settings-section">
                 <h3 class="section-title" data-i18n="algorithmTitle">🧠 Thuật toán Giao dịch & Mix Mode</h3>
                 <div class="form-stack">
                   <div class="form-group">
-                    <label class="form-label">Thuật toán Giao dịch (Chọn nhiều để Mix)</label>
+                    <label class="form-label">Trading Algorithm (Select multiple to mix)</label>
                     <div class="algo-mix-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 4px;">
-                      <label class="algo-checkbox-card" data-tooltip="Đường trung bình động lũy thừa" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Exponential Moving Average" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="ema" checked style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">EMA Crossover</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Chỉ báo sức mạnh tương đối" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Relative Strength Index" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="rsi" checked style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">RSI Oversold</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Độ lệch chuẩn biên độ giá" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Price standard deviation bands" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="bb" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">Bollinger Bands</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Phân tích cảm xúc mạng xã hội" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Social sentiment analysis" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="sentiment" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">AI Social Sentiment</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Độ hội tụ phân kỳ trung bình động" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Moving average convergence divergence" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="macd" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">MACD Divergence</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Đột biến khối lượng giá trị giao dịch" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Volume spike detection" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="volume" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">Volume Price Trend</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Mua thấp bán cao trong vùng biên độ" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Buy low sell high in range" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="grid" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">Grid Range Strategy</span>
                         </div>
                       </label>
-                      <label class="algo-checkbox-card" data-tooltip="Nhận diện xu hướng dòng tiền lớn" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
+                      <label class="algo-checkbox-card" data-tooltip="Smart money flow detection" style="display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;">
                         <input type="checkbox" name="tradeAlgo" value="supertrend" style="accent-color: var(--accent);">
                         <div class="algo-info">
                           <span style="font-weight: 500; font-size: 13px; display: block;">SuperTrend Tracker</span>
@@ -468,16 +473,16 @@
 
                   <div class="form-grid-2" style="margin-top: 8px;">
                     <div class="form-group">
-                      <label class="form-label">Phương Thức Mix Thuật Toán (Mix Mode)</label>
+                      <label class="form-label">Algorithm Mix Mode</label>
                       <select id="trade-mix-mode" class="select-md">
-                        <option value="consensus">Consensus (Tất cả thuật toán)</option>
-                        <option value="majority">Majority (Đa số biểu quyết)</option>
-                        <option value="weighted">Weighted (Trọng số tối ưu)</option>
-                        <option value="freestyle">Freestyle (Ưu tiên tín hiệu đầu tiên)</option>
+                        <option value="consensus">Consensus (All agree)</option>
+                        <option value="majority">Majority (Most agree)</option>
+                        <option value="weighted">Weighted (Optimized)</option>
+                        <option value="freestyle">Freestyle (First signal wins)</option>
                       </select>
                     </div>
                     <div class="form-group" id="weighted-config-group" style="display: none;">
-                      <label class="form-label">Tối ưu hóa Trọng số AI</label>
+                      <label class="form-label">AI Weight Optimization</label>
                       <select class="select-md">
                         <option value="risk-adjusted">Sharpe Ratio Optimized</option>
                         <option value="high-yield">Trend Weighted Yield Optimization</option>
@@ -487,20 +492,20 @@
                 </div>
               </section>
 
-              <!-- 3. Risk Matrix & Thiết Lập Độ Liều -->
+              <!-- 3. Risk Matrix & Aggressiveness -->
               <section class="settings-section">
                 <h3 class="section-title" data-i18n="riskTitle">🛡️ Risk Matrix & Thiết Lập Độ Liều</h3>
                 <div class="form-stack">
                   <div class="row-list">
                     <div class="row">
                       <div class="row-info">
-                        <span class="row-label" data-tooltip="Tần suất giao dịch và mức độ chấp nhận biến động của bot" style="cursor: help;">Độ Liều (Aggressiveness) <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
+                        <span class="row-label" data-tooltip="Trading frequency and volatility tolerance" style="cursor: help;">Aggressiveness <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
                       </div>
                       <div class="range-control">
                         <input type="range" id="aggressiveness-range" min="1" max="5" step="1" value="2" />
                         <span class="range-val" style="min-width: 150px; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
                           <span id="aggressiveness-emoji" style="font-size: 1.1rem; line-height: 1;">😴</span>
-                          <span id="aggressiveness-text" style="font-size: 11px; font-weight: 500; color: var(--accent);">Thận trọng</span>
+                          <span id="aggressiveness-text" style="font-size: 11px; font-weight: 500; color: var(--accent);">Conservative</span>
                         </span>
                       </div>
                     </div>
@@ -508,7 +513,7 @@
                     <!-- Stop Loss Slider -->
                     <div class="row">
                       <div class="row-info">
-                        <span class="row-label" data-tooltip="Tự động bán cắt lỗ khi giá trị token giảm chạm ngưỡng này" style="cursor: help;">Cắt lỗ tối đa (Stop Loss - SL) <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
+                        <span class="row-label" data-tooltip="Auto sell when token drops to this threshold" style="cursor: help;">Max Stop Loss (SL) <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
                       </div>
                       <div class="range-control">
                         <input type="range" id="sl-range" min="1" max="30" step="0.5" value="5" />
@@ -519,7 +524,7 @@
                     <!-- Take Profit Slider -->
                     <div class="row">
                       <div class="row-info">
-                        <span class="row-label" data-tooltip="Tự động bán chốt lời khi token tăng đạt lợi nhuận này" style="cursor: help;">Chốt lời mục tiêu (Take Profit - TP) <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
+                        <span class="row-label" data-tooltip="Auto sell when token reaches this profit" style="cursor: help;">Take Profit (TP) <span style="font-size: 11px; opacity: 0.6; margin-left: 2px;">ⓘ</span></span>
                       </div>
                       <div class="range-control">
                         <input type="range" id="tp-range" min="5" max="200" step="5" value="15" />
@@ -551,7 +556,7 @@
                 <div class="section-head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
                   <div>
                     <h3 class="section-title" style="margin: 0; border: none; padding: 0;">🖥️ Live Bot Simulator & Terminal</h3>
-                    <p class="section-desc" style="margin: 4px 0 0 0;">Theo dõi lệnh đang quét, tín hiệu giao dịch và tỷ lệ lợi nhuận của bot.</p>
+                    <p class="section-desc" style="margin: 4px 0 0 0;">Monitor scanning orders, trade signals and bot profit ratio.</p>
                   </div>
                   <div class="terminal-stats" style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <span class="status-pill" style="background: rgba(34, 197, 94, 0.1); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.2);">Win Rate: <span id="sim-winrate">0%</span></span>
@@ -576,7 +581,7 @@
                 </div>
 
                 <div class="action-bar" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-                  <p class="callout-trade" style="font-size: 11px; color: var(--text-muted); max-width: 60%; margin: 0;">* Cảnh báo: Sử dụng thông tin giao dịch giả lập phục vụ mục đích kiểm thử UI/UX.</p>
+                  <p class="callout-trade" style="font-size: 11px; color: var(--text-muted); max-width: 60%; margin: 0;">* Warning: Uses simulated trade data for UI/UX testing purposes.</p>
                   <div class="action-bar-right">
                     <button id="toggle-trade-btn" class="btn-primary" style="padding: 10px 20px; font-weight: 500; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; border: none; transition: background 0.2s; white-space: nowrap;" data-i18n="activateAutoTrade">Kích hoạt AI Agent</button>
                   </div>

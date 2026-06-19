@@ -56,30 +56,49 @@ async function executeTransactionWithWallet(
   savedSettings: any,
 ): Promise<any> {
   // Determine which wallet to use from user's dropdown (persisted in localStorage)
-  const walletChoice = localStorage.getItem('minipet-trade-wallet') || 'agent';
+  let walletChoice = localStorage.getItem('minipet-trade-wallet') || 'agent';
   const zkLoginSession = savedSettings.zkLoginSession;
+
+  // Auto-fallback: if agent selected but no key, use zklogin if available
+  if (walletChoice === 'agent' && !savedSettings.agentSecretKey && zkLoginSession) {
+    walletChoice = 'zklogin';
+  }
+
+  console.log("[SignTx] walletChoice:", walletChoice, "zkLoginSession keys:", zkLoginSession ? Object.keys(zkLoginSession) : "null", "zkLoginSession:", JSON.stringify(zkLoginSession)?.slice(0, 200));
 
   if (walletChoice === 'zklogin') {
     if (!zkLoginSession) {
       throw new Error("zkLogin wallet selected but signing session is missing. Please switch to Agent Wallet in Settings, or re-sync via Google login.");
-    } else {
+    }
+    if (!zkLoginSession.ephemeralPrivateKey || !zkLoginSession.jwt || !zkLoginSession.randomness || !zkLoginSession.maxEpoch) {
+      throw new Error(`zkLogin session incomplete. Missing fields. Please re-sync via Google login. Got: ${JSON.stringify(Object.keys(zkLoginSession))}`);
+    }
+    if (!savedSettings.suiAddress) {
+      throw new Error("SUI address not found in settings. Please re-sync wallet.");
+    }
+    {
       const { Ed25519Keypair } = await import("@mysten/sui/keypairs/ed25519");
       const { getExtendedEphemeralPublicKey, getZkLoginSignature } = await import("@mysten/sui/zklogin");
       const ephemeralKeypair = Ed25519Keypair.fromSecretKey(zkLoginSession.ephemeralPrivateKey);
-      const proverResponse = await fetch("https://prover-dev.mystenlabs.com/v1", {
+      const epk = getExtendedEphemeralPublicKey(ephemeralKeypair.getPublicKey());
+      const proverResponse = await fetch("https://api.enoki.mystenlabs.com/v1/zklogin/zkp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer enoki_public_b1c00104f51636649e30132176038cd8",
+          "zklogin-jwt": zkLoginSession.jwt,
+        },
         body: JSON.stringify({
-          jwt: zkLoginSession.jwt,
-          extendedEphemeralPublicKey: getExtendedEphemeralPublicKey(ephemeralKeypair.getPublicKey()),
+          network: "testnet",
+          ephemeralPublicKey: epk,
           maxEpoch: parseInt(zkLoginSession.maxEpoch),
-          jwtRandomness: zkLoginSession.randomness,
-          salt: zkLoginSession.salt || "30041975020919453004197502091945",
-          keyClaimName: "sub",
+          randomness: zkLoginSession.randomness,
         }),
       });
-      if (!proverResponse.ok) throw new Error(`ZK Prover failed: ${await proverResponse.text()}`);
-      const zkProof = await proverResponse.json();
+      if (!proverResponse.ok) throw new Error(`Enoki ZKP failed: ${await proverResponse.text()}`);
+      const enokiResp = await proverResponse.json();
+      const zkProof = enokiResp.data || enokiResp;
+
       transaction.setSender(savedSettings.suiAddress);
       const txBytes = await transaction.build({ client });
       const { signature: ephSig } = await ephemeralKeypair.signTransaction(txBytes);
@@ -1592,6 +1611,7 @@ async function handlePendingTransferClarification(userText: string) {
       });
 
       const tx = new Transaction();
+      tx.setSender(savedSettings.suiAddress);
       const [coin] = tx.splitCoins(tx.gas, [
         Math.floor(amount * 1_000_000_000),
       ]);
@@ -1609,7 +1629,8 @@ async function handlePendingTransferClarification(userText: string) {
         { text: successText },
       );
     } catch (e: any) {
-      const errMsg = e.message || e.toString();
+      console.error("[ClarifyTransfer] FULL ERROR:", e, "stack:", e.stack);
+      const errMsg = `${e.message}\n${e.stack?.split('\n').slice(0,3).join(' | ')}`;
       const friendlyMsg = tt("transferFailed", { error: errMsg });
 
       localChatHistory.push({ role: "assistant", content: friendlyMsg });
@@ -1660,6 +1681,9 @@ async function handleConfirmTransfer(userText: string) {
 
   try {
     const savedSettings: any = await window.electronAPI.getSettings();
+    console.log("[ConfirmTransfer] recipient:", recipient, "amount:", amount, "suiAddress:", savedSettings?.suiAddress, "zkSession:", !!savedSettings?.zkLoginSession);
+    if (!recipient) { throw new Error("Recipient is undefined"); }
+    if (!savedSettings?.suiAddress) { throw new Error("suiAddress is undefined in settings"); }
     const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } =
       await import("@mysten/sui/jsonRpc");
     const { Transaction } = await import("@mysten/sui/transactions");
@@ -1669,6 +1693,7 @@ async function handleConfirmTransfer(userText: string) {
       network: "testnet",
     });
     const tx = new Transaction();
+    tx.setSender(savedSettings.suiAddress);
     const [coin] = tx.splitCoins(tx.gas, [Math.floor(amount * 1_000_000_000)]);
     tx.transferObjects([coin], recipient);
 
@@ -1682,7 +1707,8 @@ async function handleConfirmTransfer(userText: string) {
       text: successText,
     });
   } catch (e: any) {
-    const errText = tt("transferFailed", { error: e.message || e.toString() });
+    console.error("[ConfirmTransfer] FULL ERROR:", e, "stack:", e.stack);
+    const errText = `❌ Transfer failed: ${e.message}\n${e.stack?.split('\n').slice(0,3).join(' | ')}`;
     localChatHistory.push({ role: "assistant", content: errText });
     (window.electronAPI as any).broadcastPetEvent(`chat-reply-${instanceId}`, {
       text: errText,
@@ -1975,6 +2001,7 @@ async function handleLocalChat(userText: string) {
               });
 
               const tx = new Transaction();
+              tx.setSender(savedSettings.suiAddress);
               const [coin] = tx.splitCoins(tx.gas, [
                 Math.floor(amount * 1_000_000_000),
               ]);
@@ -2019,9 +2046,10 @@ async function handleLocalChat(userText: string) {
           toolResult = tt("walletNotSynced");
         } else {
           try {
-            const recipient = args.recipient_address;
-            const amount = args.amount;
+            const recipient = args.recipient_address || args.recipient || args.address || args.to;
+            const amount = args.amount || args.value;
             const confirmed = args.confirmed;
+            console.log("[Transfer] args:", JSON.stringify(args), "recipient:", recipient, "amount:", amount, "suiAddress:", savedSettings.suiAddress);
 
             if (!recipient || !amount) {
               toolResult = "❌ Missing recipient address or amount.";
@@ -2050,6 +2078,7 @@ async function handleLocalChat(userText: string) {
                     });
 
                     const tx = new Transaction();
+                    tx.setSender(savedSettings.suiAddress);
                     const [coin] = tx.splitCoins(tx.gas, [
                       Math.floor(amount * 1_000_000_000),
                     ]);
@@ -2081,6 +2110,7 @@ async function handleLocalChat(userText: string) {
                 });
 
                 const tx = new Transaction();
+                tx.setSender(savedSettings.suiAddress);
                 const [coin] = tx.splitCoins(tx.gas, [
                   Math.floor(amount * 1_000_000_000),
                 ]);
@@ -2107,7 +2137,8 @@ async function handleLocalChat(userText: string) {
               }
             }
           } catch (e: any) {
-            toolResult = friendlyError(e.message || e.toString(), "Transfer");
+            console.error("[Transfer] FULL ERROR:", e);
+            toolResult = `❌ Transfer failed: ${e.message || e.toString()}\nStack: ${e.stack?.split('\n').slice(0,3).join(' | ')}`;
           }
         }
       } else if (fnName === "add_fast_transfer_wallet") {

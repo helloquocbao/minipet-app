@@ -558,6 +558,25 @@ impl PetManager {
                     self.settings.agent_address = s.to_string();
                 }
             }
+            if let Some(v) = obj.get("walletMode") {
+                if let Some(s) = v.as_str() {
+                    self.settings.wallet_mode = s.to_string();
+                }
+            }
+            if let Some(v) = obj.get("zkLoginSession") {
+                if v.is_null() {
+                    self.settings.zklogin_session = None;
+                } else {
+                    if let Ok(session) = serde_json::from_value::<ZkLoginSession>(v.clone()) {
+                        self.settings.zklogin_session = Some(session);
+                    }
+                }
+            }
+            if let Some(v) = obj.get("fastTransferWallets") {
+                if let Ok(wallets) = serde_json::from_value::<Vec<WhitelistWallet>>(v.clone()) {
+                    self.settings.fast_transfer_wallets = wallets;
+                }
+            }
         }
         self.enforce_wallet_restrictions();
         self.save_settings().await;

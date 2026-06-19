@@ -1131,6 +1131,10 @@ function setupAgentWallet(): void {
   updateAgentWalletUI();
   void refreshAgentBalance();
 
+  document.getElementById("reload-agent-balance-btn")?.addEventListener("click", () => {
+    void refreshAgentBalance();
+  });
+
   generateBtn?.addEventListener("click", () => {
     void (async () => {
       if (!api?.generateAgentKeypair) {
@@ -1403,7 +1407,16 @@ function setupAutoTradeTab(): void {
     "trade-wallet-select",
   ) as HTMLSelectElement;
   if (walletSelect) {
-    const savedWallet = localStorage.getItem("minipet-trade-wallet") || "agent";
+    let savedWallet = localStorage.getItem("minipet-trade-wallet") || "agent";
+    // Auto-select zklogin if no agent wallet but has zkLogin session
+    if (
+      savedWallet === "agent" &&
+      !currentSettings?.agentSecretKey &&
+      currentSettings?.zkLoginSession
+    ) {
+      savedWallet = "zklogin";
+      localStorage.setItem("minipet-trade-wallet", "zklogin");
+    }
     walletSelect.value = savedWallet;
     updateTradeWalletAddress();
     walletSelect.addEventListener("change", () => {
