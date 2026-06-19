@@ -46,6 +46,7 @@ let isChatActive = false;
 let isAnyChatActive = false;
 let pendingWalletSyncAddress = "";
 let isSuggestingWalletSync = false;
+let pendingSyncUrl = "";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let cachedSettings: any = null;
 
@@ -184,6 +185,47 @@ function pickUniqueRandom(opt: string | string[]): string {
   return opt[randomIndex];
 }
 
+async function confirmSync(url: string) {
+  try {
+    const parsed = new URL(url);
+    const address = parsed.searchParams.get("address");
+    if (!address) return;
+    const api = (window as any).electronAPI;
+    if (!api) return;
+
+    const zkloginPayloadBase64 = parsed.searchParams.get("zkloginPayload");
+    let zkLoginSession = null;
+    if (zkloginPayloadBase64) {
+      try {
+        const decoded = atob(zkloginPayloadBase64);
+        zkLoginSession = JSON.parse(decoded);
+      } catch (err) {
+        console.error("Failed to parse zkloginPayload:", err);
+      }
+    }
+
+    const updateObj: any = {
+      suiAddress: address,
+      suiEnabled: true,
+      walletMode: zkLoginSession ? "zklogin" : "extension",
+    };
+    if (zkLoginSession) {
+      updateObj.zkLoginSession = zkLoginSession;
+    }
+    await api.updateSettings(updateObj);
+
+    if (zkLoginSession) {
+      showSpeech("Wallet synced with full signing session! Ready for transactions.", 5000, true, "System");
+    } else {
+      showSpeech("Wallet address synced (view-only). For transactions, sync via Google login.", 6000, true, "System");
+    }
+    setTimeout(() => window.location.reload(), 2500);
+  } catch (err) {
+    console.error("[Overlay] confirmSync failed:", err);
+    showSpeech("Wallet sync failed.", 4000, true, "System");
+  }
+}
+
 async function handleDeepLinkUrl(url: string) {
   console.warn("[DeepLink] Received URL:", url);
   try {
@@ -206,39 +248,10 @@ async function handleDeepLinkUrl(url: string) {
             return;
           }
 
-          // Cập nhật cài đặt ngay lập tức, bỏ confirm dialog trên cửa sổ trong suốt để tránh treo/bị chặn
-          const zkloginPayloadBase64 =
-            parsed.searchParams.get("zkloginPayload");
-          let zkLoginSession = null;
-          if (zkloginPayloadBase64) {
-            try {
-              const decoded = atob(zkloginPayloadBase64);
-              zkLoginSession = JSON.parse(decoded);
-            } catch (err) {
-              console.error("Failed to parse zkloginPayload:", err);
-            }
-          }
-
-          const updateObj: any = {
-            suiAddress: address,
-            suiEnabled: true,
-            walletMode: zkLoginSession ? "zklogin" : "extension",
-          };
-          if (zkLoginSession) {
-            updateObj.zkLoginSession = zkLoginSession;
-          }
-          await api.updateSettings(updateObj);
-
-          // Pet reports sync result
-          if (zkLoginSession) {
-            showSpeech("Wallet synced with full signing session! Ready for transactions.", 5000, true, "System");
-          } else {
-            showSpeech("Wallet address synced (view-only). For transactions, sync via Google login.", 6000, true, "System");
-          }
-
-          setTimeout(() => window.location.reload(), 2500);
-        } else {
-          console.warn("[Overlay] Electron API not available for updateSettings");
+          // Store pending sync and ask user to confirm by clicking pet
+          pendingSyncUrl = url;
+          const shortAddr = address.slice(0, 6) + "..." + address.slice(-4);
+          showSpeech(`Sync wallet ${shortAddr}? Click me to confirm!`, 15000, true, "System");
         }
       }
     }
@@ -895,6 +908,14 @@ function setupMouseInteraction(
     }
 
     if (wasDragged) return;
+
+    // Confirm sync from deep-link
+    if (pendingSyncUrl) {
+      const url = pendingSyncUrl;
+      pendingSyncUrl = "";
+      void confirmSync(url);
+      return;
+    }
 
     // Gợi ý đồng bộ ví từ clipboard
     if (isSuggestingWalletSync && pendingWalletSyncAddress) {

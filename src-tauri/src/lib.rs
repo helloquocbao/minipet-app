@@ -4,6 +4,8 @@ mod pet;
 mod tray;
 mod window;
 
+use tauri_plugin_deep_link::DeepLinkExt;
+
 use pet::manager::PetManager;
 use pet::pomodoro::{PomodoroManager, PomodoroState};
 use std::sync::Arc;
@@ -41,6 +43,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            app.deep_link().register_all().unwrap_or_else(|e| {
+                eprintln!("[DeepLink] Failed to register: {}", e);
+            });
+
             let app_data_dir = app
                 .path()
                 .app_data_dir()
@@ -131,8 +137,8 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     if let Ok(text) = cb_handle.clipboard().read_text() {
-                        // Skip if text is empty or too long (> 2000 chars)
-                        if text.is_empty() || text.len() > 2000 {
+                        // Skip if text is empty or too long (> 5000 chars), but always allow deep links
+                        if text.is_empty() {
                             continue;
                         }
 
@@ -148,8 +154,8 @@ pub fn run() {
                                 let _ = cb_handle.emit("single-instance://deep-link", trimmed);
                             }
                             // Check for Object ID (0x + 64 hex) or Coin Type (0x...::...::...)
-                            else if (trimmed.starts_with("0x") && trimmed.len() == 66) || 
-                               (trimmed.starts_with("0x") && trimmed.contains("::")) {
+                            else if trimmed.len() <= 2000 && ((trimmed.starts_with("0x") && trimmed.len() == 66) || 
+                               (trimmed.starts_with("0x") && trimmed.contains("::"))) {
                                 let _ = cb_handle.emit("clipboard://sui-address-copied", trimmed);
                             }
                         }
