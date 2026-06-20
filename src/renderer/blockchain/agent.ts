@@ -1,47 +1,18 @@
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { SUI_CONFIG } from '../../shared/constants';
+import { translations, Language } from '../../shared/i18n/translations';
 
 export class SecurityAgent {
   private rpcUrl: string = SUI_CONFIG.RPC_URL;
   private unlistenCb: UnlistenFn | null = null;
-  
-  // Từ điển các câu nói ngẫu nhiên
-  private dict = {
-    thinking: [
-      "Để tui giúp bạn check cái này nha 🕵️‍♂️",
-      "Đánh hơi thấy địa chỉ Sui! Đợi xíu để tui soi... 🐾",
-      "Có người copy địa chỉ mới kìa! Đang quét blockchain... 🚀"
-    ],
-    safe: [
-      "✅ Ngon lành! Token này trong sạch nha boss!",
-      "✅ Nhìn có vẻ an toàn đấy! Quyền Mint đã khóa.",
-      "✅ Check xong! TreasuryCap an toàn, cứ yên tâm!"
-    ],
-    scam: [
-      "🚨 Á á á! Kèo này có mùi lùa gà nha boss! (Chưa khóa Mint)",
-      "🚨 Cảnh báo đỏ! Dev vẫn cầm chìa khóa in tiền, cẩn thận mất trắng!",
-      "🚨 Honeypot alert! Chạy ngay đi trước khi mọi chuyện tồi tệ hơn!"
-    ],
-    fake: [
-      "⚠️ Ê, token này không tồn tại hoặc là hàng fake nha!",
-      "⚠️ Hình như địa chỉ ma rồi, quét không ra kết quả nào!"
-    ],
-    account: [
-      "🔍 Check xong! Địa chỉ này không phải là Object hay Token, có vẻ là một địa chỉ ví cá nhân (Account Address) nha sếp! 👤",
-      "👤 Hừm, đây là một địa chỉ ví Sui chứ không phải Token hay Object đâu boss ơi!"
-    ],
-    warning: [
-      "⚠️ Tên coin có thể bị làm giả! Nhớ check kỹ địa chỉ gốc nha sếp!",
-      "⚠️ Dev vẫn giữ quyền nâng cấp (UpgradeCap). Cẩn thận nó chèn code lùa gà!"
-    ],
-    error: [
-      "❌ Lỗi mạng gòi, không check được...",
-      "❌ Đang check thì đứt mạng, boss thử lại sau nha!"
-    ]
-  };
+  private lang: Language = 'en';
 
   constructor() {
     // Initialized Event-driven On-chain Analysis Agent
+  }
+
+  private get t() {
+    return translations[this.lang] || translations['en'];
   }
 
   private pickRandom(arr: string[]): string {
@@ -49,6 +20,16 @@ export class SecurityAgent {
   }
 
   public async start() {
+    const api = (window as any).electronAPI;
+    try {
+      const settings = await api.getSettings();
+      this.lang = (settings?.language as Language) || 'en';
+    } catch { /* use default */ }
+
+    api.onSettingsUpdate((data: any) => {
+      if (data?.settings?.language) this.lang = data.settings.language as Language;
+    });
+
     this.unlistenCb = await listen('clipboard://sui-address-copied', (event: any) => {
       const address = event.payload as string;
       void this.handleNewAddress(address).catch(console.error);
@@ -75,7 +56,7 @@ export class SecurityAgent {
       const settings = await api.getSettings();
       userAddress = settings?.suiAddress || '';
       if (userAddress && text.trim().toLowerCase() === userAddress.trim().toLowerCase()) {
-        api.broadcastPetEvent('pet:say', { text: "👤 Đây là địa chỉ ví của sếp nè! 🏠", priority: true });
+        api.broadcastPetEvent('pet:say', { text: this.t.agentOwnWallet, priority: true });
         return;
       }
     } catch (err) {
@@ -83,20 +64,16 @@ export class SecurityAgent {
     }
 
     const trimmed = text.trim();
-    // Phát hiện và đề xuất liên kết ví mới từ clipboard nếu ví hiện tại chưa được liên kết
     if (!userAddress && trimmed.startsWith('0x') && trimmed.length === 66 && !trimmed.includes('::')) {
-      api.broadcastPetEvent('pet:say', {
-        text: `🔑 Sen ơi, tui thấy sen vừa copy địa chỉ ví Sui này!\n${trimmed.slice(0, 8)}...${trimmed.slice(-6)}\nNếu đây là ví của sen, nhấp vào tui để đồng bộ ngay nhé! 🐾`,
-        priority: true
-      });
+      const msg = (this.t.agentSuggestSync as string)
+        .replace('{address}', `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}`);
+      api.broadcastPetEvent('pet:say', { text: msg, priority: true });
       api.broadcastPetEvent('wallet:suggest-sync', { address: trimmed });
       return;
     }
 
-    // Pet nói: "Để tui giúp bạn..."
-    api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.thinking), priority: true });
+    api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentThinking), priority: true });
 
-    // Thêm delay giả lập chút xíu để tạo cảm giác "đang check"
     await new Promise<void>(resolve => { setTimeout(resolve, 1500); });
 
     if (trimmed.includes('::')) {
@@ -112,7 +89,7 @@ export class SecurityAgent {
       const response: any = await api.suiRpcCall('suix_getCoinMetadata', [coinType], this.rpcUrl);
       if (response.error || !response.result) {
         api.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
-        api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.fake), priority: true });
+        api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentFake), priority: true });
       } else {
         const data = response.result;
         let supplyStr = 'N/A';
@@ -128,17 +105,20 @@ export class SecurityAgent {
           console.error('[SecurityAgent] Supply fetch error:', supplyErr);
         }
 
-        const msg = `🪙 Token: ${data.name} (${data.symbol})\n🔢 Decimals: ${data.decimals}\n📊 Tổng cung: ${supplyStr}`;
+        const msg = (this.t.agentTokenInfo as string)
+          .replace('{name}', data.name)
+          .replace('{symbol}', data.symbol)
+          .replace('{decimals}', data.decimals)
+          .replace('{supply}', supplyStr);
         api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         
-        // Delay một xíu rồi nói thêm câu cảnh báo
         setTimeout(() => {
-          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.warning), priority: true });
+          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentWarning), priority: true });
         }, 4500);
       }
     } catch (e) {
       console.error(e);
-      api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.error), priority: true });
+      api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentError), priority: true });
     }
   }
 
@@ -150,14 +130,12 @@ export class SecurityAgent {
         { showType: true, showOwner: true }
       ], this.rpcUrl);
 
-      // Nếu không tồn tại object, tiến hành check xem có phải địa chỉ ví (Account Address) không
       if (response.error || response.result?.error || !response.result?.data) {
         let balanceStr = '0.000';
         let assetsCount = 0;
         let isWallet = false;
 
         try {
-          // Check số dư SUI
           const balResponse: any = await api.suiRpcCall('suix_getBalance', [objectId, '0x2::sui::SUI'], this.rpcUrl);
           if (balResponse.result && balResponse.result.totalBalance !== undefined) {
             isWallet = true;
@@ -165,7 +143,6 @@ export class SecurityAgent {
             balanceStr = (Number(bal) / 1_000_000_000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
           }
 
-          // Check tài sản/NFTs sở hữu
           const assetsResponse: any = await api.suiRpcCall('suix_getOwnedObjects', [objectId], this.rpcUrl);
           if (assetsResponse.result && assetsResponse.result.data) {
             isWallet = true;
@@ -177,10 +154,13 @@ export class SecurityAgent {
 
         if (isWallet) {
           const shortAddr = `${objectId.slice(0, 8)}...${objectId.slice(-6)}`;
-          const msg = `⚠️ Cảnh báo! Boss vừa copy địa chỉ ví lạ:\n🔗 ID: ${shortAddr}\n💰 Số dư: ${balanceStr} SUI\n📦 Tài sản: ${assetsCount} NFTs/Objects\nBoss hãy check kỹ trước khi gửi tài sản nha! 🛡️`;
+          const msg = (this.t.agentWalletInfo as string)
+            .replace('{shortAddr}', shortAddr)
+            .replace('{balance}', balanceStr)
+            .replace('{assets}', assetsCount.toString());
           api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         } else {
-          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.fake), priority: true });
+          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentFake), priority: true });
         }
         return;
       }
@@ -189,53 +169,52 @@ export class SecurityAgent {
       const type = objData.type || '';
       const owner = objData.owner;
 
-      // Scoring 1: Nếu là TreasuryCap và do ví cá nhân giữ -> Cảnh báo Scam
       if (type.includes('0x2::coin::TreasuryCap')) {
         if (owner && typeof owner === 'object' && 'AddressOwner' in owner) {
           api.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
-          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.scam), priority: true });
+          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentScam), priority: true });
           return;
         } else {
-          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.safe), priority: true });
+          api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentSafe), priority: true });
           return;
         }
       }
 
-      // Scoring 2: UpgradeCap (Quyền nâng cấp Smart Contract)
       if (type.includes('0x2::package::UpgradeCap')) {
         if (owner && typeof owner === 'object' && 'AddressOwner' in owner) {
           api.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
-          api.broadcastPetEvent('pet:say', { text: this.dict.warning[1], priority: true }); // Đọc câu cảnh báo UpgradeCap
+          api.broadcastPetEvent('pet:say', { text: this.t.agentWarning[1], priority: true });
           return;
         }
       }
 
-      // Phân tích quyền sở hữu cụ thể
-      let ownerStatus = 'Không rõ';
+      let ownerStatus = this.t.agentOwnerUnknown as string;
       if (owner === 'Immutable') {
-        ownerStatus = '🔒 Không thể thay đổi (Immutable)';
+        ownerStatus = this.t.agentOwnerImmutable as string;
       } else if (owner && typeof owner === 'object') {
         if ('AddressOwner' in owner) {
           const ownerAddr = owner.AddressOwner;
-          ownerStatus = `👤 Cá nhân sở hữu: ${ownerAddr.slice(0, 8)}...${ownerAddr.slice(-6)}`;
+          ownerStatus = (this.t.agentOwnerAddress as string).replace('{addr}', `${ownerAddr.slice(0, 8)}...${ownerAddr.slice(-6)}`);
         } else if ('ObjectOwner' in owner) {
           const ownerObj = owner.ObjectOwner;
-          ownerStatus = `📦 Object sở hữu: ${ownerObj.slice(0, 8)}...${ownerObj.slice(-6)}`;
+          ownerStatus = (this.t.agentOwnerObject as string).replace('{addr}', `${ownerObj.slice(0, 8)}...${ownerObj.slice(-6)}`);
         } else if ('Shared' in owner) {
-          ownerStatus = `🌐 Shared Object (Dùng chung)`;
+          ownerStatus = this.t.agentOwnerShared as string;
         }
       }
 
-      // Lấy tên rút gọn của Type
       const typeParts = type.split('::');
       const simplifiedType = typeParts[typeParts.length - 1];
       const shortId = `${objectId.slice(0, 8)}...${objectId.slice(-6)}`;
 
-      const msg = `📦 Sui Object (${simplifiedType})\n🔗 ID: ${shortId}\n🔑 Quyền sở hữu: ${ownerStatus}`;
+      const msg = (this.t.agentObjectInfo as string)
+        .replace('{type}', simplifiedType)
+        .replace('{shortId}', shortId)
+        .replace('{owner}', ownerStatus);
       api.broadcastPetEvent('pet:say', { text: msg, priority: true });
     } catch (e) {
       console.error(e);
-      api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.dict.error), priority: true });
+      api.broadcastPetEvent('pet:say', { text: this.pickRandom(this.t.agentError), priority: true });
     }
   }
 }

@@ -173,9 +173,8 @@ export class SuiMonitor {
           if (isPhishing) {
             this.flaggedNFTs.add(objId);
             const nftName = display?.name || content?.fields?.name || 'Unknown';
-            const msg = this.lang === 'vi'
-              ? `🚨 CẢNH BÁO! Ví vừa nhận NFT lạ: "${nftName}". Đây có thể là lừa đảo. Không click link! ⛔`
-              : `🚨 PHISHING ALERT! Suspicious NFT received: "${nftName}". Do NOT click any links! ⛔`;
+            const t = translations[(this.lang as Language) || 'en'] || translations['en'];
+            const msg = (t.monitorPhishing as string).replace('{name}', nftName);
             api.broadcastPetEvent('pet:say', { text: msg, priority: true });
             api.broadcastPetEvent('blockchain:event', { event_type: 'bonk', pet_slug: 'Agent' });
             break; // Alert once per poll tick
@@ -201,7 +200,8 @@ export class SuiMonitor {
         if (suiAmount < 0.75 && suiAmount > 0) {
           if (now - this.lastGasAlertTime >= 1200000) {
             this.lastGasAlertTime = now;
-            const msg = `⚠️ CẢNH BÁO GAS! Số dư ví của sếp chỉ còn **${suiAmount.toFixed(3)} SUI**. Sắp hết xăng trả phí giao dịch (Gas fee) rồi, sếp nhớ nạp thêm nha! 💸`;
+            const t = translations[(this.lang as Language) || 'en'] || translations['en'];
+            const msg = (t.monitorGasWarning as string).replace('{amount}', suiAmount.toFixed(3));
             api.broadcastPetEvent('pet:say', { text: msg, priority: true });
           }
         }
@@ -228,7 +228,8 @@ export class SuiMonitor {
 
         if (hasDeFi) {
           this.lastDeFiAlertTime = now;
-          const msg = `🛡️ GIÁM SÁT DEFI: Phát hiện sếp có vị thế Lending/Borrowing đang hoạt động. Nhớ chú ý biến động giá thị trường để bảo vệ tỷ lệ thanh lý (Health Factor) an toàn nha! 📈`;
+          const t = translations[(this.lang as Language) || 'en'] || translations['en'];
+          const msg = t.monitorDeFiAlert as string;
           api.broadcastPetEvent('pet:say', { text: msg, priority: true });
         }
       }

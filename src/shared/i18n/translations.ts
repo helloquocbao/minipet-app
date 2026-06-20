@@ -438,6 +438,52 @@ export const translations: Record<Language, any> = {
     stopAutoTrade: "Stop AI Agent",
     botStopped: "Bot Stopped",
     botRunning: "Bot Running",
+    // Security Agent messages
+    agentThinking: [
+      "Let me check this for you 🕵️‍♂️",
+      "Detected a Sui address! Scanning... 🐾",
+      "Someone copied a new address! Checking blockchain... 🚀",
+    ],
+    agentSafe: [
+      "✅ All clear! This token is legit, boss!",
+      "✅ Looks safe! Mint authority is locked.",
+      "✅ Check done! TreasuryCap is secure, no worries!",
+    ],
+    agentScam: [
+      "🚨 Red flag! This token smells like a scam! (Mint not locked)",
+      "🚨 Warning! Dev still holds the money printer key, be careful!",
+      "🚨 Honeypot alert! Run before things get worse!",
+    ],
+    agentFake: [
+      "⚠️ Hey, this token doesn't exist or is fake!",
+      "⚠️ Seems like a ghost address, no results found!",
+    ],
+    agentAccount: [
+      "🔍 Done checking! This isn't an Object or Token — looks like a personal wallet address! 👤",
+      "👤 Hmm, this is a Sui wallet address, not a Token or Object!",
+    ],
+    agentWarning: [
+      "⚠️ The coin name might be spoofed! Double-check the original address!",
+      "⚠️ Dev still holds UpgradeCap. Be careful of rug-pull code injection!",
+    ],
+    agentError: [
+      "❌ Network error, can't check right now...",
+      "❌ Connection dropped mid-check, try again later!",
+    ],
+    agentOwnWallet: "👤 That's your own wallet address! 🏠",
+    agentSuggestSync: "🔑 Hey, I see you just copied a Sui address!\n{address}\nIf this is yours, click me to sync it! 🐾",
+    agentTokenInfo: "🪙 Token: {name} ({symbol})\n🔢 Decimals: {decimals}\n📊 Total supply: {supply}",
+    agentWalletInfo: "⚠️ Warning! You just copied an unknown wallet:\n🔗 ID: {shortAddr}\n💰 Balance: {balance} SUI\n📦 Assets: {assets} NFTs/Objects\nPlease verify before sending any assets! 🛡️",
+    agentObjectInfo: "📦 Sui Object ({type})\n🔗 ID: {shortId}\n🔑 Ownership: {owner}",
+    agentOwnerImmutable: "🔒 Immutable (Cannot be changed)",
+    agentOwnerAddress: "👤 Owned by: {addr}",
+    agentOwnerObject: "📦 Object owned: {addr}",
+    agentOwnerShared: "🌐 Shared Object",
+    agentOwnerUnknown: "Unknown",
+    // Monitor messages
+    monitorGasWarning: "⚠️ GAS WARNING! Your wallet only has **{amount} SUI** left. Running low on gas fees, remember to top up! 💸",
+    monitorDeFiAlert: "🛡️ DEFI MONITOR: Detected active Lending/Borrowing positions. Keep an eye on market volatility to protect your Health Factor! 📈",
+    monitorPhishing: "🚨 PHISHING ALERT! Suspicious NFT received: \"{name}\". Do NOT click any links! ⛔",
   },
   vi: {
     settingsTitle: "Cài đặt MiniPet",
@@ -922,6 +968,52 @@ export const translations: Record<Language, any> = {
     stopAutoTrade: "Dừng AI Agent",
     botStopped: "Bot Dừng",
     botRunning: "Bot Chạy",
+    // Security Agent messages
+    agentThinking: [
+      "Để tui giúp bạn check cái này nha 🕵️‍♂️",
+      "Đánh hơi thấy địa chỉ Sui! Đợi xíu để tui soi... 🐾",
+      "Có người copy địa chỉ mới kìa! Đang quét blockchain... 🚀",
+    ],
+    agentSafe: [
+      "✅ Ngon lành! Token này trong sạch nha boss!",
+      "✅ Nhìn có vẻ an toàn đấy! Quyền Mint đã khóa.",
+      "✅ Check xong! TreasuryCap an toàn, cứ yên tâm!",
+    ],
+    agentScam: [
+      "🚨 Á á á! Kèo này có mùi lùa gà nha boss! (Chưa khóa Mint)",
+      "🚨 Cảnh báo đỏ! Dev vẫn cầm chìa khóa in tiền, cẩn thận mất trắng!",
+      "🚨 Honeypot alert! Chạy ngay đi trước khi mọi chuyện tồi tệ hơn!",
+    ],
+    agentFake: [
+      "⚠️ Ê, token này không tồn tại hoặc là hàng fake nha!",
+      "⚠️ Hình như địa chỉ ma rồi, quét không ra kết quả nào!",
+    ],
+    agentAccount: [
+      "🔍 Check xong! Địa chỉ này không phải là Object hay Token, có vẻ là một địa chỉ ví cá nhân (Account Address) nha sếp! 👤",
+      "👤 Hừm, đây là một địa chỉ ví Sui chứ không phải Token hay Object đâu boss ơi!",
+    ],
+    agentWarning: [
+      "⚠️ Tên coin có thể bị làm giả! Nhớ check kỹ địa chỉ gốc nha sếp!",
+      "⚠️ Dev vẫn giữ quyền nâng cấp (UpgradeCap). Cẩn thận nó chèn code lùa gà!",
+    ],
+    agentError: [
+      "❌ Lỗi mạng gòi, không check được...",
+      "❌ Đang check thì đứt mạng, boss thử lại sau nha!",
+    ],
+    agentOwnWallet: "👤 Đây là địa chỉ ví của sếp nè! 🏠",
+    agentSuggestSync: "🔑 Sen ơi, tui thấy sen vừa copy địa chỉ ví Sui này!\n{address}\nNếu đây là ví của sen, nhấp vào tui để đồng bộ ngay nhé! 🐾",
+    agentTokenInfo: "🪙 Token: {name} ({symbol})\n🔢 Decimals: {decimals}\n📊 Tổng cung: {supply}",
+    agentWalletInfo: "⚠️ Cảnh báo! Boss vừa copy địa chỉ ví lạ:\n🔗 ID: {shortAddr}\n💰 Số dư: {balance} SUI\n📦 Tài sản: {assets} NFTs/Objects\nBoss hãy check kỹ trước khi gửi tài sản nha! 🛡️",
+    agentObjectInfo: "📦 Sui Object ({type})\n🔗 ID: {shortId}\n🔑 Quyền sở hữu: {owner}",
+    agentOwnerImmutable: "🔒 Không thể thay đổi (Immutable)",
+    agentOwnerAddress: "👤 Cá nhân sở hữu: {addr}",
+    agentOwnerObject: "📦 Object sở hữu: {addr}",
+    agentOwnerShared: "🌐 Shared Object (Dùng chung)",
+    agentOwnerUnknown: "Không rõ",
+    // Monitor messages
+    monitorGasWarning: "⚠️ CẢNH BÁO GAS! Số dư ví của sếp chỉ còn **{amount} SUI**. Sắp hết xăng trả phí giao dịch (Gas fee) rồi, sếp nhớ nạp thêm nha! 💸",
+    monitorDeFiAlert: "🛡️ GIÁM SÁT DEFI: Phát hiện sếp có vị thế Lending/Borrowing đang hoạt động. Nhớ chú ý biến động giá thị trường để bảo vệ tỷ lệ thanh lý (Health Factor) an toàn nha! 📈",
+    monitorPhishing: "🚨 CẢNH BÁO! Ví vừa nhận NFT lạ: \"{name}\". Đây có thể là lừa đảo. Không click link! ⛔",
   },
   fr: {
     settingsTitle: "Paramètres MiniPet",

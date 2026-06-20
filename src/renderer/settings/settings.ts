@@ -284,6 +284,10 @@ function renderPetGallery(pets: PetListItem[], settings: UserSettings) {
     const thumb = document.createElement("div");
     thumb.className = "pet-thumb";
     thumb.style.backgroundImage = `url('${thumbnailCache.get(pet.slug) || pet.thumbnailPath}')`;
+    if (pet.slug.startsWith("nft-")) {
+      thumb.style.backgroundSize = "contain";
+      thumb.style.backgroundPosition = "center";
+    }
 
     const name = document.createElement("div");
     name.className = "pet-name";
@@ -322,6 +326,10 @@ function renderActivePets(settings: UserSettings, pets: PetListItem[]) {
     const thumb = document.createElement("div");
     thumb.className = "mini-thumb";
     thumb.style.backgroundImage = `url('${thumbnailCache.get(petType.slug) || petType.thumbnailPath}')`;
+    if (petType.slug.startsWith("nft-")) {
+      thumb.style.backgroundSize = "contain";
+      thumb.style.backgroundPosition = "center";
+    }
 
     const name = document.createElement("span");
     name.className = "instance-name";
@@ -530,7 +538,7 @@ function setupGlobalEventListeners() {
       const isDev =
         window.location.port !== "" || window.location.hostname === "127.0.0.1";
       const syncUrl = isDev
-        ? "http://localhost:3000/sync-login"
+        ? "https://onchain.minipet.xyz/sync-login"
         : "https://onchain.minipet.xyz/sync-login";
       if (api.open_url) {
         api.open_url(syncUrl);
@@ -1131,9 +1139,11 @@ function setupAgentWallet(): void {
   updateAgentWalletUI();
   void refreshAgentBalance();
 
-  document.getElementById("reload-agent-balance-btn")?.addEventListener("click", () => {
-    void refreshAgentBalance();
-  });
+  document
+    .getElementById("reload-agent-balance-btn")
+    ?.addEventListener("click", () => {
+      void refreshAgentBalance();
+    });
 
   generateBtn?.addEventListener("click", () => {
     void (async () => {
