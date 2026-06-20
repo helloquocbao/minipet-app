@@ -554,9 +554,79 @@ pub async fn download_model(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+async fn download_llama_server_inner(app: &AppHandle, bin_path: &std::path::Path) -> Result<(), String> {
+    let url = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "https://huggingface.co/iamquocbao/minipet-qwen-model-SUI/resolve/main/llama-server-aarch64-apple-darwin"
+        } else {
+            "https://huggingface.co/iamquocbao/minipet-qwen-model-SUI/resolve/main/llama-server-x86_64-apple-darwin"
+        }
+    } else if cfg!(target_os = "windows") {
+        "https://huggingface.co/iamquocbao/minipet-qwen-model-SUI/resolve/main/llama-server.exe"
+    } else {
+        "https://huggingface.co/iamquocbao/minipet-qwen-model-SUI/resolve/main/llama-server-x86_64-unknown-linux-gnu"
+    };
+
+    let response = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    let total_size = response.content_length().unwrap_or(0);
+
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    if let Some(parent) = bin_path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+    }
+
+    let mut file = tokio::fs::File::create(bin_path).await.map_err(|e| e.to_string())?;
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+
+        let progress = if total_size > 0 {
+            (downloaded as f64 / total_size as f64) * 100.0
+        } else { 0.0 };
+
+        let _ = app.emit("llama-download-progress", serde_json::json!({
+            "downloaded": downloaded,
+            "total": total_size,
+            "progress": progress
+        }));
+    }
+
+    file.sync_all().await.map_err(|e| e.to_string())?;
+
+    // Make executable on unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(bin_path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+
+    eprintln!("[Rust Local AI] llama-server downloaded successfully");
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn start_ai_server(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let mut process_lock = state.llama_process.lock().await;
+
+    // Ensure llama-server binary exists, download if not
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let bin_name = if cfg!(target_os = "windows") {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
+    let bin_path = app_data_dir.join(bin_name);
+    if !bin_path.exists() {
+        eprintln!("[Rust Local AI] llama-server not found, downloading...");
+        download_llama_server_inner(&app, &bin_path).await?;
+    }
     
     // Check if already running — clean up dead processes
     if let Some(child) = process_lock.as_mut() {
@@ -578,26 +648,8 @@ pub async fn start_ai_server(state: State<'_, AppState>, app: AppHandle) -> Resu
         }
     }
 
-    let app_data_dir = app.path().app_data_dir().unwrap();
-    let model_path = app_data_dir.join("minipet-qwen-model-SUI.gguf");
-    
-    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    let mut bin_path = resource_dir.join("bin/llama-server-aarch64-apple-darwin");
-    
-    if !bin_path.exists() {
-        let candidates = vec![
-            resource_dir.join("../../bin/llama-server-aarch64-apple-darwin"),
-            resource_dir.join("../../../bin/llama-server-aarch64-apple-darwin"),
-            std::env::current_dir().unwrap_or_default().join("bin/llama-server-aarch64-apple-darwin"),
-            std::env::current_dir().unwrap_or_default().join("src-tauri/bin/llama-server-aarch64-apple-darwin"),
-        ];
-        for candidate in candidates {
-            if candidate.exists() {
-                bin_path = candidate;
-                break;
-            }
-        }
-    }
+    let app_data_dir2 = app.path().app_data_dir().unwrap();
+    let model_path = app_data_dir2.join("minipet-qwen-model-SUI.gguf");
     
     eprintln!("[Rust Local AI] Starting AI server...");
     eprintln!("[Rust Local AI] Binary path: {:?}", bin_path);

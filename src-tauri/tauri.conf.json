@@ -22,9 +22,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "bin/llama-server"
-    ],
     "icon": [
       "icons/icon.icns",
       "icons/icon.ico",

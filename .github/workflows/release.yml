@@ -44,7 +44,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'MiniPet v__VERSION__'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: 'Download and install MiniPet. AI brain and engine will be downloaded on first use.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
