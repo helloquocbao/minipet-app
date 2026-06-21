@@ -211,9 +211,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |app_handle, event| match event {
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 let _ = crate::window::settings::open(app_handle);
-            }            tauri::RunEvent::ExitRequested { .. } => {
+            }
+            tauri::RunEvent::ExitRequested { .. } => {
                 let state = app_handle.state::<AppState>();
                 tauri::async_runtime::block_on(async {
                     // Use timeout to prevent deadlocks during exit
