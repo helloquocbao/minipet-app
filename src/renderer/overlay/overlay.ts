@@ -10,6 +10,7 @@ import {
 } from "@tauri-apps/api/webviewWindow";
 import { SecurityAgent } from "../blockchain/agent";
 import { AutoTradeSimulator } from "../blockchain/auto-trade";
+import { AgentTradeEngine } from "../blockchain/agent-trade";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
 let statusAlarming = false;
@@ -37,6 +38,7 @@ let currentSpeechText = "";
 let suiMonitor: SuiMonitor | null = null;
 let securityAgent: SecurityAgent | null = null;
 let autoTradeSimulator: AutoTradeSimulator | null = null;
+let agentTradeEngine: AgentTradeEngine | null = null;
 let currentActivePets: any[] = [];
 let speechWindowRef: any = null;
 let lastContextKey = "";
@@ -2194,37 +2196,61 @@ async function handleLocalChat(userText: string) {
         fnName === "configure_auto_trade" ||
         fnName === "get_auto_trade_status"
       ) {
-        // ── Auto-trade (SIMULATED feature) for the 'pet' or 'agent' wallet ──
+        // ── Auto-trade: starts/stops the real AgentTradeEngine ──
         const wallet: "pet" | "agent" =
-          String(args.wallet || "pet").toLowerCase() === "agent"
-            ? "agent"
-            : "pet";
-        const walletLabel = wallet === "agent" ? "ví Agent" : "ví Pet";
+          String(args.wallet || "agent").toLowerCase() === "pet"
+            ? "pet"
+            : "agent";
+        const walletLabel = wallet === "agent" ? "Agent wallet" : "Pet wallet";
         const currentAutoTrade: Record<string, any> = {
           ...(savedSettings.autoTrade || {}),
         };
         const existing = currentAutoTrade[wallet] || {};
 
         const describeStrategy = (cfg: any): string => {
-          if (!cfg || cfg.action === undefined) return "theo cấu hình mặc định";
-          const verb = cfg.action === "sell" ? "Bán" : "Mua";
-          return `${verb} ${cfg.amount ?? "?"} ${cfg.token || "SUI"} mỗi ${cfg.interval_minutes ?? 60} phút`;
+          if (!cfg || cfg.action === undefined) return "using default config from Settings";
+          const verb = cfg.action === "sell" ? "Sell" : "Buy";
+          return `${verb} ${cfg.amount ?? "?"} ${cfg.token || "SUI"} every ${cfg.interval_minutes ?? 60} min`;
         };
-        const DEV_NOTE =
-          " 🧪 Tính năng giả lập, đang phát triển — chờ lên mainnet.";
 
         if (fnName === "start_auto_trade") {
-          currentAutoTrade[wallet] = { ...existing, enabled: true };
-          await window.electronAPI.updateSettings({
-            autoTrade: currentAutoTrade,
-          });
-          toolResult = `Started trade for ${walletLabel}: ${describeStrategy(existing)}.${DEV_NOTE}`;
+          // Actually start the trade engine
+          if (!savedSettings.agentSecretKey && wallet === "agent") {
+            toolResult = "❌ No agent wallet found. Generate one in Settings first.";
+          } else {
+            currentAutoTrade[wallet] = { ...existing, enabled: true };
+            await window.electronAPI.updateSettings({
+              autoTrade: currentAutoTrade,
+            });
+            // Start AgentTradeEngine if not already running
+            if (!agentTradeEngine) {
+              agentTradeEngine = new AgentTradeEngine(
+                {
+                  budgetSui: existing.amount || 5,
+                  cooldownMs: (existing.interval_minutes || 15) * 60 * 1000,
+                  slippagePct: 1,
+                  agentSecretKey: savedSettings.agentSecretKey || "",
+                },
+                (log: any) => {
+                  if (log.action === "BUY" || log.action === "SELL") {
+                    showSpeech(`💹 ${log.message}`, 6000, false, "auto-trade");
+                  }
+                },
+              );
+              agentTradeEngine.start();
+            }
+            toolResult = `✅ Started AI Agent Trade for ${walletLabel}. ${describeStrategy(existing)}`;
+          }
         } else if (fnName === "stop_auto_trade") {
           currentAutoTrade[wallet] = { ...existing, enabled: false };
           await window.electronAPI.updateSettings({
             autoTrade: currentAutoTrade,
           });
-          toolResult = `Stopped trade for ${walletLabel}.${DEV_NOTE}`;
+          if (agentTradeEngine) {
+            agentTradeEngine.stop();
+            agentTradeEngine = null;
+          }
+          toolResult = `🛑 Stopped AI Agent Trade for ${walletLabel}.`;
         } else if (fnName === "configure_auto_trade") {
           const action = args.action === "sell" ? "sell" : "buy";
           const token = args.token || "SUI";
@@ -2249,13 +2275,13 @@ async function handleLocalChat(userText: string) {
           await window.electronAPI.updateSettings({
             autoTrade: currentAutoTrade,
           });
-          toolResult = `Config saved for ${walletLabel}: ${describeStrategy(newCfg)}.${DEV_NOTE}`;
+          toolResult = `⚙️ Config saved for ${walletLabel}: ${describeStrategy(newCfg)}.`;
         } else {
           // get_auto_trade_status
           if (!existing || existing.enabled === undefined) {
-            toolResult = `${walletLabel} has no trade config.${DEV_NOTE}`;
+            toolResult = `${walletLabel} has no trade config yet. Configure in Settings > AI Agent Trade.`;
           } else {
-            toolResult = `${walletLabel} trade is ${existing.enabled ? "ON" : "OFF"} — ${describeStrategy(existing)}.${DEV_NOTE}`;
+            toolResult = `${walletLabel} trade is ${existing.enabled ? "ON ✅" : "OFF 🛑"} — ${describeStrategy(existing)}.`;
           }
         }
       } else if (fnName === "bonk_pet") {

@@ -88,21 +88,17 @@ export class AutoTradeSimulator {
   }
 
   private simulateTrade(wallet: AutoTradeWallet, cfg: AutoTradeConfig): void {
-    const label = wallet === 'agent' ? 'ví Agent' : 'ví Pet';
-    const action = cfg.action === 'sell' ? 'sell' : 'buy';
-    const verb = action === 'sell' ? 'Bán' : 'Mua';
+    const label = wallet === 'agent' ? 'Agent' : 'Pet';
+    const action = cfg.action === 'sell' ? 'Sell' : 'Buy';
     const token = cfg.token || 'SUI';
     const amount = cfg.amount ?? 1;
 
-    // Mock market price + resulting USDC value (purely simulated).
-    const price = 1 + Math.random() * 0.6; // ~ $1.00 – $1.60 per token
+    const price = 1 + Math.random() * 0.6;
     const value = (amount * price).toFixed(2);
 
-    const text = `🧪 [GIẢ LẬP · auto-trade ${label}] ${verb} ${amount} ${token} @ $${price.toFixed(3)} ≈ $${value} — tính năng đang phát triển, chờ lên mainnet`;
+    const text = `💹 [SIMULATE] [${label}] ${action} ${amount} ${token} @ $${price.toFixed(3)} ≈ $${value}`;
     try {
       this.notify(text);
-    } catch {
-      /* notification is best-effort */
-    }
+    } catch { /* best-effort */ }
   }
 }

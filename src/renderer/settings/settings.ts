@@ -1711,13 +1711,22 @@ function setupAutoTradeTab(): void {
         : `[${exchangeVal.toUpperCase()}]`;
 
       if (action === "scan") {
-        let scans = [
+        const isEn = (currentSettings?.language || "en") !== "vi";
+        let scans = isEn ? [
+          `[SCAN] Scanning liquidity pool ${coin}/SUI on Cetus Protocol...`,
+          `[SENTIMENT] Social sentiment (X/Twitter) for $${coin} spiking!`,
+          `[MONITOR] Agent tracking whale wallet 0x4a8d... just deposited $${coin}.`,
+        ] : [
           `[SCAN] Quét thanh khoản pool ${coin}/SUI trên Cetus Protocol...`,
           `[SENTIMENT] Chỉ số mạng xã hội (X/Twitter) của $${coin} tăng đột biến!`,
           `[MONITOR] Agent đang theo dõi ví whale 0x4a8d... vừa nạp $${coin}.`,
         ];
         if (provider === "deepbook" || exchangeVal === "deepbook") {
-          scans = [
+          scans = isEn ? [
+            `[DEEPBOOK] Scanning orderbook for ${coin}/SUI pair...`,
+            `[DEEPBOOK] Found large bid wall from whale at good price...`,
+            `[DEEPBOOK] Measuring market depth on DeepBook CLOB...`,
+          ] : [
             `[DEEPBOOK] Đang quét sổ lệnh (Orderbook) cặp giao dịch SUI/${coin}...`,
             `[DEEPBOOK] Tìm thấy tường mua (Bid Wall) lớn của whale tại mức giá tốt...`,
             `[DEEPBOOK] Đang đo độ sâu thị trường (Market Depth) trên DeepBook CLOB...`,
@@ -1725,10 +1734,11 @@ function setupAutoTradeTab(): void {
         }
         addLog("scan", scans[Math.floor(Math.random() * scans.length)]);
       } else if (action === "buy") {
+        const isEn = (currentSettings?.language || "en") !== "vi";
         if (currentAlgos.length === 0) {
           addLog(
             "system",
-            `[WARNING] Không có thuật toán nào được chọn để giao dịch! Vui lòng chọn ít nhất 1.`,
+            isEn ? `[WARNING] No algorithm selected! Please select at least 1.` : `[WARNING] Không có thuật toán nào được chọn để giao dịch! Vui lòng chọn ít nhất 1.`,
           );
           return;
         }
@@ -1736,7 +1746,7 @@ function setupAutoTradeTab(): void {
         if (isCex && !apiKey) {
           addLog(
             "system",
-            `[WARNING] Chưa cấu hình API cho ${exchangeName}! Lệnh giả lập sẽ thực hiện dưới chế độ Testnet/Sandbox.`,
+            isEn ? `[WARNING] No API configured for ${exchangeName}! Simulating in Testnet/Sandbox mode.` : `[WARNING] Chưa cấu hình API cho ${exchangeName}! Lệnh giả lập sẽ thực hiện dưới chế độ Testnet/Sandbox.`,
           );
         }
 
@@ -1744,12 +1754,12 @@ function setupAutoTradeTab(): void {
         if (mixMode === "consensus") {
           addLog(
             "scan",
-            `[MIX CONSENSUS] Tất cả thuật toán [${currentAlgos.join(", ")}] đồng loạt báo hiệu MUA.`,
+            isEn ? `[MIX CONSENSUS] All algorithms [${currentAlgos.join(", ")}] signal BUY.` : `[MIX CONSENSUS] Tất cả thuật toán [${currentAlgos.join(", ")}] đồng loạt báo hiệu MUA.`,
           );
         } else if (mixMode === "majority") {
           addLog(
             "scan",
-            `[MIX MAJORITY] Đa số biểu quyết thông qua tín hiệu từ [${currentAlgos.slice(0, Math.ceil(currentAlgos.length / 2 + 0.1)).join(", ")}].`,
+            isEn ? `[MIX MAJORITY] Majority vote passed from [${currentAlgos.slice(0, Math.ceil(currentAlgos.length / 2 + 0.1)).join(", ")}].` : `[MIX MAJORITY] Đa số biểu quyết thông qua tín hiệu từ [${currentAlgos.slice(0, Math.ceil(currentAlgos.length / 2 + 0.1)).join(", ")}].`,
           );
         } else if (mixMode === "weighted") {
           const weights = currentAlgos.map(
@@ -1757,29 +1767,29 @@ function setupAutoTradeTab(): void {
           );
           addLog(
             "scan",
-            `[MIX WEIGHTS] Danh mục phân bổ: { ${weights.join(", ")} }. Kích hoạt mua.`,
+            isEn ? `[MIX WEIGHTS] Portfolio allocation: { ${weights.join(", ")} }. Triggering buy.` : `[MIX WEIGHTS] Danh mục phân bổ: { ${weights.join(", ")} }. Kích hoạt mua.`,
           );
         } else {
           addLog(
             "scan",
-            `[MIX DEGEN] Tín hiệu MUA nhanh từ thuật toán ${currentAlgos[Math.floor(Math.random() * currentAlgos.length)]}.`,
+            isEn ? `[MIX DEGEN] Fast BUY signal from algorithm ${currentAlgos[Math.floor(Math.random() * currentAlgos.length)]}.` : `[MIX DEGEN] Tín hiệu MUA nhanh từ thuật toán ${currentAlgos[Math.floor(Math.random() * currentAlgos.length)]}.`,
           );
         }
 
         if (exchangeVal === "deepbook") {
           addLog(
             "buy",
-            `[BUY] ${exPrefix} Khớp lệnh Market Buy ${budget} SUI lấy $${coin} trên sổ lệnh DeepBook CLOB`,
+            isEn ? `[BUY] ${exPrefix} Market Buy ${budget} SUI for $${coin} on DeepBook CLOB orderbook` : `[BUY] ${exPrefix} Khớp lệnh Market Buy ${budget} SUI lấy $${coin} trên sổ lệnh DeepBook CLOB`,
           );
         } else if (isCex) {
           addLog(
             "buy",
-            `[BUY] ${exPrefix} Đặt lệnh Mua Spot ${budget} SUI lấy $${coin} thành công via API (Slippage: ${(Math.random() * 0.2 + 0.05).toFixed(2)}%)`,
+            isEn ? `[BUY] ${exPrefix} Spot Buy order ${budget} SUI for $${coin} via API (Slippage: ${(Math.random() * 0.2 + 0.05).toFixed(2)}%)` : `[BUY] ${exPrefix} Đặt lệnh Mua Spot ${budget} SUI lấy $${coin} thành công via API (Slippage: ${(Math.random() * 0.2 + 0.05).toFixed(2)}%)`,
           );
         } else {
           addLog(
             "buy",
-            `[BUY] ${exPrefix} Đã swap ${budget} SUI lấy $${coin} (Slippage: ${(Math.random() * 0.8 + 0.1).toFixed(2)}%)`,
+            isEn ? `[BUY] ${exPrefix} Swapped ${budget} SUI for $${coin} (Slippage: ${(Math.random() * 0.8 + 0.1).toFixed(2)}%)` : `[BUY] ${exPrefix} Đã swap ${budget} SUI lấy $${coin} (Slippage: ${(Math.random() * 0.8 + 0.1).toFixed(2)}%)`,
           );
         }
         simTradesCount++;
@@ -1791,11 +1801,13 @@ function setupAutoTradeTab(): void {
           priority: true,
         });
       } else if (action === "hold") {
+        const isEn = (currentSettings?.language || "en") !== "vi";
         addLog(
           "info",
-          `[HOLD] ${exPrefix} Đang giữ lệnh $${coin}. Lợi nhuận tức thời: ${(Math.random() * 6 - 2).toFixed(2)}%`,
+          isEn ? `[HOLD] ${exPrefix} Holding $${coin}. Unrealized P&L: ${(Math.random() * 6 - 2).toFixed(2)}%` : `[HOLD] ${exPrefix} Đang giữ lệnh $${coin}. Lợi nhuận tức thời: ${(Math.random() * 6 - 2).toFixed(2)}%`,
         );
       } else if (action === "sell") {
+        const isEn = (currentSettings?.language || "en") !== "vi";
         const profit = Math.random() > 0.45;
         const targetPercent = profit
           ? parseFloat(tpRange?.value || "15")
@@ -1806,7 +1818,7 @@ function setupAutoTradeTab(): void {
         if (profit) {
           addLog(
             "win",
-            `[TAKE PROFIT] ${exPrefix} Đã chốt lời $${coin} thành công tại mức +${targetPercent.toFixed(1)}% (Lãi +${finalPnL.toFixed(3)} SUI)`,
+            isEn ? `[TAKE PROFIT] ${exPrefix} Took profit on $${coin} at +${targetPercent.toFixed(1)}% (Profit +${finalPnL.toFixed(3)} SUI)` : `[TAKE PROFIT] ${exPrefix} Đã chốt lời $${coin} thành công tại mức +${targetPercent.toFixed(1)}% (Lãi +${finalPnL.toFixed(3)} SUI)`,
           );
           simPnl += finalPnL;
 
@@ -1818,7 +1830,7 @@ function setupAutoTradeTab(): void {
         } else {
           addLog(
             "sell",
-            `[STOP LOSS] ${exPrefix} Cắt lỗ tự động $${coin} tại mức ${targetPercent.toFixed(1)}% (Lỗ ${finalPnL.toFixed(3)} SUI)`,
+            isEn ? `[STOP LOSS] ${exPrefix} Auto stop-loss $${coin} at ${targetPercent.toFixed(1)}% (Loss ${finalPnL.toFixed(3)} SUI)` : `[STOP LOSS] ${exPrefix} Cắt lỗ tự động $${coin} tại mức ${targetPercent.toFixed(1)}% (Lỗ ${finalPnL.toFixed(3)} SUI)`,
           );
           simPnl += finalPnL;
 
@@ -1831,9 +1843,10 @@ function setupAutoTradeTab(): void {
         simTradesCount++;
         updateStatsUI();
       } else {
+        const isEn = (currentSettings?.language || "en") !== "vi";
         addLog(
           "system",
-          `[AI ANALYST] MiniPet gợi ý tái cơ cấu danh mục đầu tư...`,
+          isEn ? `[AI ANALYST] MiniPet suggests portfolio rebalancing...` : `[AI ANALYST] MiniPet gợi ý tái cơ cấu danh mục đầu tư...`,
         );
       }
     };
