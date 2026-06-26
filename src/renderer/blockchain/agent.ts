@@ -5,6 +5,7 @@ import { translations, Language } from '../../shared/i18n/translations';
 export class SecurityAgent {
   private rpcUrl: string = SUI_CONFIG.RPC_URL;
   private unlistenCb: UnlistenFn | null = null;
+  private settingsUnlisten: (() => void) | null = null;
   private lang: Language = 'en';
 
   constructor() {
@@ -26,7 +27,7 @@ export class SecurityAgent {
       this.lang = (settings?.language as Language) || 'en';
     } catch { /* use default */ }
 
-    api.onSettingsUpdate((data: any) => {
+    this.settingsUnlisten = await api.onSettingsUpdate((data: any) => {
       if (data?.settings?.language) this.lang = data.settings.language as Language;
     });
 
@@ -40,6 +41,10 @@ export class SecurityAgent {
     if (this.unlistenCb) {
       this.unlistenCb();
       this.unlistenCb = null;
+    }
+    if (this.settingsUnlisten) {
+      this.settingsUnlisten();
+      this.settingsUnlisten = null;
     }
   }
 
@@ -64,7 +69,7 @@ export class SecurityAgent {
     }
 
     const trimmed = text.trim();
-    if (!userAddress && trimmed.startsWith('0x') && trimmed.length === 66 && !trimmed.includes('::')) {
+    if (!userAddress && /^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
       const msg = (this.t.agentSuggestSync as string)
         .replace('{address}', `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}`);
       api.broadcastPetEvent('pet:say', { text: msg, priority: true });

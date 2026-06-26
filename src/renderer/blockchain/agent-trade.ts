@@ -142,6 +142,9 @@ export class AgentTradeEngine {
   }
 
   private async fetchSuiPrice(): Promise<number> {
+    // SECURITY: never fabricate a price. A random fallback can manufacture fake
+    // EMA crossovers that trigger real on-chain trades. Return 0 (= "feed
+    // unavailable") so the caller skips trading this tick.
     try {
       const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=sui&vs_currencies=usd', {
         signal: AbortSignal.timeout(5000)
@@ -150,8 +153,7 @@ export class AgentTradeEngine {
       const data = await res.json();
       return data.sui?.usd || 0;
     } catch {
-      // Fallback: use SUI testnet faucet price approximation
-      return 1.0 + (Math.random() * 0.1 - 0.05); // ~$1.00 for testnet demo
+      return 0;
     }
   }
 
