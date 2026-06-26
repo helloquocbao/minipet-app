@@ -65,6 +65,10 @@ export interface AutoTradeConfig {
   amount?: number;
   /** Interval between trades, in minutes */
   interval_minutes?: number;
+  /** On-chain environment the desired trade executes against */
+  env?: 'testnet' | 'mainnet';
+  /** Execution model when the owner activates the trade */
+  mode?: 'once' | 'recurring';
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {

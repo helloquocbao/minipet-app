@@ -784,6 +784,17 @@ impl PetManager {
             if tokio::fs::write(&self.settings_path, json).await.is_ok() {
                 self.is_dirty = false;
                 self.last_save_time = std::time::Instant::now();
+                // SECURITY: settings.json holds wallet secrets — restrict to
+                // owner read/write only (0600) on Unix. Best-effort.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = tokio::fs::set_permissions(
+                        &self.settings_path,
+                        std::fs::Permissions::from_mode(0o600),
+                    )
+                    .await;
+                }
             }
         }
     }

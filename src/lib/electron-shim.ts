@@ -217,9 +217,11 @@ export function setupElectronShim() {
     }),
 
     // --- Events ---
-    onSettingsUpdate: (cb: (data: any) => void) => {
-      void listen("settings:update", (e) => cb({ settings: e.payload }));
-    },
+    // Returns a Promise<UnlistenFn> so callers can clean up the subscription
+    // (prevents leaked listeners across master re-elections). Existing
+    // fire-and-forget callers can simply ignore the return value.
+    onSettingsUpdate: (cb: (data: any) => void) =>
+      listen("settings:update", (e) => cb({ settings: e.payload })),
     onNotification: (_cb: (payload: any) => void) => {},
     onPing: (cb: () => void) => {
       void listen("pet:ping", () => cb());
