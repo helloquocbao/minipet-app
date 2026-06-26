@@ -11,6 +11,10 @@ import {
 import { SecurityAgent } from "../blockchain/agent";
 import { AutoTradeSimulator } from "../blockchain/auto-trade";
 import { AgentTradeEngine } from "../blockchain/agent-trade";
+import {
+  DesiredTradeExecutor,
+  type DesiredTradeConfig,
+} from "../blockchain/desired-trade";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
 let statusAlarming = false;
@@ -39,6 +43,8 @@ let suiMonitor: SuiMonitor | null = null;
 let securityAgent: SecurityAgent | null = null;
 let autoTradeSimulator: AutoTradeSimulator | null = null;
 let agentTradeEngine: AgentTradeEngine | null = null;
+let desiredTradeExecutor: DesiredTradeExecutor | null = null;
+let isMasterInstance = false;
 let currentActivePets: any[] = [];
 let speechWindowRef: any = null;
 let lastContextKey = "";
@@ -49,6 +55,12 @@ let isAnyChatActive = false;
 let pendingWalletSyncAddress = "";
 let isSuggestingWalletSync = false;
 let pendingSyncUrl = "";
+
+/** Strict Sui address check: 0x + exactly 64 hex chars. */
+function isValidSuiAddress(addr: unknown): addr is string {
+  return typeof addr === "string" && /^0x[0-9a-fA-F]{64}$/.test(addr);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 let cachedSettings: any = null;
 
@@ -66,7 +78,9 @@ async function executeTransactionWithWallet(
     walletChoice = 'zklogin';
   }
 
-  console.log("[SignTx] walletChoice:", walletChoice, "zkLoginSession keys:", zkLoginSession ? Object.keys(zkLoginSession) : "null", "zkLoginSession:", JSON.stringify(zkLoginSession)?.slice(0, 200));
+  // SECURITY: never log the zkLogin session — it contains the ephemeral
+  // private key and JWT. Log only a non-sensitive presence flag.
+  console.warn("[SignTx] walletChoice:", walletChoice, "zkSession:", !!zkLoginSession);
 
   if (walletChoice === 'zklogin') {
     if (!zkLoginSession) {
@@ -328,6 +342,20 @@ async function init(): Promise<void> {
             }
           }, 20000);
         }
+      });
+    }
+
+    // Owner activates a configured trade from Settings — only the master pet runs it.
+    if (api && api.onCustomEvent) {
+      api.onCustomEvent("trade:execute-desired", (data: any) => {
+        if (!isMasterInstance) return;
+        void activateDesiredTrade(data || {}).catch((err) =>
+          console.error("[Overlay] activateDesiredTrade failed:", err),
+        );
+      });
+      api.onCustomEvent("trade:stop-desired", () => {
+        if (!isMasterInstance) return;
+        stopDesiredTrade();
       });
     }
   } catch (deepLinkErr) {
@@ -801,6 +829,79 @@ async function init(): Promise<void> {
 }
 
 /**
+ * Activates the owner-configured "desired trade" on the master pet.
+ * Reads the saved config from settings, allows per-call overrides, persists it,
+ * then runs DesiredTradeExecutor (real on-chain execution). Returns a status line.
+ */
+async function activateDesiredTrade(
+  override?: Partial<DesiredTradeConfig> & { wallet?: "pet" | "agent" },
+): Promise<string> {
+  const settings: any = await window.electronAPI.getSettings();
+  const wallet = override?.wallet === "pet" ? "pet" : "agent";
+  const cfg: any = settings?.autoTrade?.[wallet] || {};
+
+  const action: "buy" | "sell" =
+    override?.action ?? (cfg.action === "sell" ? "sell" : "buy");
+  const token = override?.token ?? (cfg.token || "SUI");
+  const amount =
+    override?.amount ?? (typeof cfg.amount === "number" ? cfg.amount : 1);
+  const env: "testnet" | "mainnet" =
+    override?.env ?? (cfg.env === "mainnet" ? "mainnet" : "testnet");
+  const mode: "once" | "recurring" =
+    override?.mode ?? (cfg.mode === "recurring" ? "recurring" : "once");
+  const intervalMinutes =
+    override?.intervalMinutes ?? (cfg.interval_minutes ?? 60);
+
+  const agentSecretKey = settings?.agentSecretKey || "";
+  if (!agentSecretKey) {
+    return "❌ No agent wallet found. Generate one in Settings first.";
+  }
+
+  // Persist the latest desired config (and mark enabled).
+  const autoTrade: Record<string, any> = { ...(settings?.autoTrade || {}) };
+  autoTrade[wallet] = {
+    ...(autoTrade[wallet] || {}),
+    enabled: true,
+    action,
+    token,
+    amount,
+    env,
+    mode,
+    interval_minutes: intervalMinutes,
+  };
+  await window.electronAPI.updateSettings({ autoTrade });
+
+  if (desiredTradeExecutor) desiredTradeExecutor.stop();
+  desiredTradeExecutor = new DesiredTradeExecutor(
+    { action, token, amount, env, mode, intervalMinutes, slippagePct: 1, agentSecretKey },
+    (log) => {
+      if (
+        log.action === "ERROR" ||
+        log.action === "BUY" ||
+        log.action === "SELL" ||
+        log.action === "SIGNAL"
+      ) {
+        showSpeech(`💹 ${log.message}`, 6000, false, "desired-trade");
+      }
+    },
+  );
+  void desiredTradeExecutor.activate();
+
+  const verb = action === "sell" ? "Sell" : "Buy";
+  const tail = mode === "recurring" ? `, every ${intervalMinutes}m` : "";
+  return `✅ Pet activated: ${verb} ${amount} ${token} on ${env} (${mode}${tail}).`;
+}
+
+/** Stops any running desired-trade loop on this instance. */
+function stopDesiredTrade(): string {
+  if (desiredTradeExecutor) {
+    desiredTradeExecutor.stop();
+    desiredTradeExecutor = null;
+  }
+  return "🛑 Pet stopped the configured trade.";
+}
+
+/**
  * Ensures only one pet window runs the SuiMonitor to stay within RPC rate limits.
  * The window with the alphabetically lowest label is elected as Master.
  */
@@ -816,6 +917,7 @@ async function setupMasterElection() {
       const myLabel = currentWin.label;
 
       if (myLabel === sortedLabels[0]) {
+        isMasterInstance = true;
         if (!suiMonitor) {
           suiMonitor = new SuiMonitor();
         }
@@ -830,8 +932,10 @@ async function setupMasterElection() {
           autoTradeSimulator.start();
         }
       } else {
+        isMasterInstance = false;
         if (suiMonitor) {
-          (suiMonitor as any).stopPolling?.();
+          // destroy() removes the settings listener too (stopPolling alone leaks it).
+          (suiMonitor as any).destroy?.();
           suiMonitor = null;
         }
         if (securityAgent) {
@@ -841,6 +945,10 @@ async function setupMasterElection() {
         if (autoTradeSimulator) {
           autoTradeSimulator.stop();
           autoTradeSimulator = null;
+        }
+        if (desiredTradeExecutor) {
+          desiredTradeExecutor.stop();
+          desiredTradeExecutor = null;
         }
       }
     } catch (err) {
@@ -1526,7 +1634,7 @@ function buildSystemPrompt(
   dateStr?: string,
 ): string {
   const langName = LANG_NAME_MAP[langCode] || "English";
-  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet (bonk_pet), send a gift (send_pet_gift), rename your pet (rename_pet), or check your pet's stats (check_pet_stats). The recipient for transfer_sui, send_pet_gift and bonk_pet may be a raw 0x address OR a saved contact alias. You can also use 'add_fast_transfer_wallet' or 'remove_fast_transfer_wallet' to manage the user's fast transfer whitelist if they explicitly ask to add or remove an address starting with 0x. For transfers: if the recipient is a saved contact alias, pass that alias as recipient_address with confirmed=false (it is whitelisted, send immediately); if the recipient is a raw 0x address that is NOT whitelisted, first call transfer_sui with confirmed=false, and only set confirmed=true AFTER the user explicitly confirms. For automated trading use 'start_auto_trade', 'stop_auto_trade', 'configure_auto_trade' or 'get_auto_trade_status' with wallet set to 'pet' or 'agent' (this is a simulated feature configured in Settings). NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. You MUST answer ONLY in ${langName}. Do NOT mix languages.`;
+  let prompt = `You are MiniPet, a cute virtual desktop pet assistant on macOS. Keep answers short (1-2 sentences max). You MUST use the provided tools when the user asks to: transfer SUI, check balance, swap tokens, set timer, bonk a pet (bonk_pet), send a gift (send_pet_gift), rename your pet (rename_pet), or check your pet's stats (check_pet_stats). The recipient for transfer_sui, send_pet_gift and bonk_pet may be a raw 0x address OR a saved contact alias. You can also use 'add_fast_transfer_wallet' or 'remove_fast_transfer_wallet' to manage the user's fast transfer whitelist if they explicitly ask to add or remove an address starting with 0x. For transfers: if the recipient is a saved contact alias, pass that alias as recipient_address with confirmed=false (it is whitelisted, send immediately); if the recipient is a raw 0x address that is NOT whitelisted, first call transfer_sui with confirmed=false, and only set confirmed=true AFTER the user explicitly confirms. For automated trading use 'start_auto_trade', 'stop_auto_trade', 'configure_auto_trade' or 'get_auto_trade_status' with wallet set to 'pet' or 'agent' (this is a simulated feature configured in Settings). When the user asks you to execute or run the trade they already configured (e.g. 'thực hiện trade đã cấu hình', 'execute my configured trade'), use 'execute_desired_trade'; to halt it use 'stop_desired_trade'. These run the EXACT configured trade on-chain. NEVER initiate transactions, hallucinate wallet addresses, or call tools unless the user explicitly requests it. You MUST answer ONLY in ${langName}. Do NOT mix languages.`;
   if (timeStr && dateStr) {
     prompt += ` Current time: ${timeStr}, Date: ${dateStr}.`;
   }
@@ -1568,7 +1676,7 @@ async function handlePendingTransferClarification(userText: string) {
   if (!isNaN(idx) && idx >= 0 && idx < pendingTransfer.candidates.length) {
     selectedAddress = pendingTransfer.candidates[idx].address;
   } else {
-    if (text.startsWith("0x") && text.length >= 64) {
+    if (isValidSuiAddress(userText.trim())) {
       selectedAddress = userText.trim();
     } else {
       const found = pendingTransfer.candidates.find((c) =>
@@ -1826,6 +1934,8 @@ async function handleLocalChat(userText: string) {
         stop_auto_trade: "🛑 ...",
         configure_auto_trade: "⚙️ ...",
         get_auto_trade_status: "📊 ...",
+        execute_desired_trade: "💹 ...",
+        stop_desired_trade: "🛑 ...",
       };
       return msgs[fnName] || t.processing || "⏳ Processing...";
     }
@@ -1834,17 +1944,19 @@ async function handleLocalChat(userText: string) {
     function friendlyError(rawError: string, action: string): string {
       const e = rawError.toLowerCase();
 
-      if (
-        e.includes("insufficient") &&
-        (e.includes("gas") || e.includes("balance") || e.includes("coin"))
-      ) {
-        return tt("errInsufficientBalance", { action });
-      }
+      // Specific (token) before generic (gas/balance) — otherwise the generic
+      // "insufficient"+"coin" branch would always shadow the token message.
       if (
         e.includes("insufficientcoinbalance") ||
         e.includes("not enough coin")
       ) {
         return tt("errInsufficientToken", { action });
+      }
+      if (
+        e.includes("insufficient") &&
+        (e.includes("gas") || e.includes("balance") || e.includes("coin"))
+      ) {
+        return tt("errInsufficientBalance", { action });
       }
       if (e.includes("dryrunfailed") || e.includes("dry run failed")) {
         return tt("errDryRun", { action });
@@ -1989,32 +2101,68 @@ async function handleLocalChat(userText: string) {
           toolResult = tt("walletNotSynced");
         } else {
           try {
-            const amount = args.amount;
-            if (!amount) {
-              toolResult = "❌ Missing SUI amount for swap.";
+            // M4: validate amount is a finite positive number before use.
+            const amtNum =
+              typeof args.amount === "number"
+                ? args.amount
+                : parseFloat(args.amount);
+            if (!Number.isFinite(amtNum) || amtNum <= 0) {
+              toolResult = "❌ Invalid SUI amount for swap.";
             } else {
+              // M3: perform a REAL SUI→USDC swap via the Cetus Aggregator
+              // instead of transferring SUI to a treasury and faking the rate.
+              // Mainnet is used because testnet has no USDC liquidity pool.
               const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } =
                 await import("@mysten/sui/jsonRpc");
               const { Transaction } = await import("@mysten/sui/transactions");
+              const { AggregatorClient, Env } =
+                await import("@cetusprotocol/aggregator-sdk");
+
+              const SUI_TYPE = "0x2::sui::SUI";
+              const USDC_MAINNET =
+                "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
+              const sender = savedSettings.suiAddress;
+              const amountMist = BigInt(Math.floor(amtNum * 1_000_000_000)).toString();
 
               const client = new SuiJsonRpcClient({
-                url: getJsonRpcFullnodeUrl("testnet"),
-                network: "testnet",
+                url: getJsonRpcFullnodeUrl("mainnet"),
+                network: "mainnet",
+              });
+              const agg = new AggregatorClient({
+                endpoint: "https://api-sui.cetus.zone/router_v3/find_routes",
+                signer: sender,
+                env: Env.Mainnet,
               });
 
-              const tx = new Transaction();
-              tx.setSender(savedSettings.suiAddress);
-              const [coin] = tx.splitCoins(tx.gas, [
-                Math.floor(amount * 1_000_000_000),
-              ]);
-              const treasuryAddr =
-                savedSettings.treasury_address ||
-                "0xffc5bb02aa137b5df823f9a241196866a827f352b80c8c5d88e757d6a3e667f8";
-              tx.transferObjects([coin], treasuryAddr);
-
-              await executeTransactionWithWallet(client, tx, savedSettings);
-              const usdcReceived = (amount * 1.2).toFixed(2);
-              toolResult = `✅ Swap success! ${amount} SUI → ${usdcReceived} USDC`;
+              const router = await agg.findRouters({
+                from: SUI_TYPE,
+                target: USDC_MAINNET,
+                amount: amountMist,
+                byAmountIn: true,
+              });
+              if (!router) {
+                toolResult = "❌ No SUI→USDC swap route available right now.";
+              } else {
+                const tx = new Transaction();
+                await agg.fastRouterSwap({
+                  router,
+                  txb: tx,
+                  slippage: 0.01,
+                  refreshAllCoins: true,
+                });
+                tx.setSender(sender);
+                const res: any = await executeTransactionWithWallet(
+                  client,
+                  tx,
+                  savedSettings,
+                );
+                const status = res?.effects?.status?.status;
+                const digest = res?.digest || "";
+                toolResult =
+                  status === "success" || (!status && digest)
+                    ? `✅ Swapped ${amtNum} SUI → USDC via Cetus. Tx: ${digest.slice(0, 16)}...`
+                    : `❌ Swap failed${status ? `: ${status}` : ""}.`;
+              }
             }
           } catch (e: any) {
             toolResult = friendlyError(e.message || e.toString(), "Swap");
@@ -2049,12 +2197,13 @@ async function handleLocalChat(userText: string) {
         } else {
           try {
             const recipient = args.recipient_address || args.recipient || args.address || args.to;
-            const amount = args.amount || args.value;
-            const confirmed = args.confirmed;
-            console.log("[Transfer] args:", JSON.stringify(args), "recipient:", recipient, "amount:", amount, "suiAddress:", savedSettings.suiAddress);
+            // M4: coerce + validate amount (finite, positive) before any tx math.
+            const amountRaw = args.amount ?? args.value;
+            const amount =
+              typeof amountRaw === "number" ? amountRaw : parseFloat(amountRaw);
 
-            if (!recipient || !amount) {
-              toolResult = "❌ Missing recipient address or amount.";
+            if (!recipient || !Number.isFinite(amount) || amount <= 0) {
+              toolResult = "❌ Missing recipient address or valid amount.";
             } else {
               const candidates = FAST_TRANSFER_WALLETS.filter(
                 (item) =>
@@ -2063,41 +2212,16 @@ async function handleLocalChat(userText: string) {
               );
 
               if (candidates.length === 0) {
-                if (recipient.startsWith("0x") && recipient.length >= 64) {
-                  if (!confirmed) {
-                    pendingConfirmTransfer = { recipient, amount };
-                    toolResult =
-                      '⚠️ This address is not in your whitelist. Reply "ok" to confirm transfer.';
-                  } else {
-                    const { SuiJsonRpcClient, getJsonRpcFullnodeUrl } =
-                      await import("@mysten/sui/jsonRpc");
-                    const { Transaction } =
-                      await import("@mysten/sui/transactions");
-
-                    const client = new SuiJsonRpcClient({
-                      url: getJsonRpcFullnodeUrl("testnet"),
-                      network: "testnet",
-                    });
-
-                    const tx = new Transaction();
-                    tx.setSender(savedSettings.suiAddress);
-                    const [coin] = tx.splitCoins(tx.gas, [
-                      Math.floor(amount * 1_000_000_000),
-                    ]);
-                    tx.transferObjects([coin], recipient);
-
-                    await executeTransactionWithWallet(
-                      client,
-                      tx,
-                      savedSettings,
-                    );
-                    toolResult = tt("transferSuccess", {
-                      amount: amount.toString(),
-                      recipient: recipient.slice(0, 10),
-                    });
-                  }
+                if (isValidSuiAddress(recipient)) {
+                  // SECURITY: never trust a model-supplied `confirmed` flag for
+                  // an un-whitelisted address. Always require explicit
+                  // out-of-band user confirmation — the "ok" reply handled by
+                  // handleConfirmTransfer is what actually sends.
+                  pendingConfirmTransfer = { recipient, amount };
+                  toolResult =
+                    '⚠️ This address is not in your whitelist. Reply "ok" to confirm transfer.';
                 } else {
-                  toolResult = `❌ Recipient "${recipient}" not found in whitelist.`;
+                  toolResult = `❌ Recipient "${recipient}" is not a valid Sui address or whitelist alias.`;
                 }
               } else if (candidates.length === 1) {
                 const resolvedAddress = candidates[0].address;
@@ -2144,24 +2268,14 @@ async function handleLocalChat(userText: string) {
           }
         }
       } else if (fnName === "add_fast_transfer_wallet") {
+        // M5: the whitelist is an auto-approve path for transfers, so it must
+        // NOT be mutable by the model. Direct the user to add it themselves in
+        // Settings (an explicit, independent action).
         const address = args.address;
-        const alias = args.alias || "";
-        if (!address || !address.startsWith("0x")) {
-          toolResult = "❌ Invalid wallet address.";
+        if (!isValidSuiAddress(address)) {
+          toolResult = "❌ Invalid Sui address.";
         } else {
-          const currentList = [...FAST_TRANSFER_WALLETS];
-          const exists = currentList.some(
-            (w) => w.address.toLowerCase() === address.toLowerCase(),
-          );
-          if (!exists) {
-            currentList.push({ alias, address });
-            await window.electronAPI.updateSettings({
-              fastTransferWallets: currentList,
-            });
-            toolResult = `✅ Added ${alias ? `${alias} (${address})` : address} to fast transfer list.`;
-          } else {
-            toolResult = `ℹ️ ${address} is already in the list.`;
-          }
+          toolResult = `🔒 For your safety, I can't add addresses to the fast-transfer whitelist. Please add ${address.slice(0, 10)}... yourself in Settings → Wallet.`;
         }
       } else if (fnName === "remove_fast_transfer_wallet") {
         const address = args.address;
@@ -2284,6 +2398,22 @@ async function handleLocalChat(userText: string) {
             toolResult = `${walletLabel} trade is ${existing.enabled ? "ON ✅" : "OFF 🛑"} — ${describeStrategy(existing)}.`;
           }
         }
+      } else if (fnName === "execute_desired_trade") {
+        // Owner activates the EXACT configured trade (real on-chain execution).
+        const wallet: "pet" | "agent" =
+          String(args.wallet || "agent").toLowerCase() === "pet"
+            ? "pet"
+            : "agent";
+        const override: Partial<DesiredTradeConfig> & { wallet: "pet" | "agent" } = { wallet };
+        if (args.action === "buy" || args.action === "sell") override.action = args.action;
+        if (typeof args.token === "string" && args.token) override.token = args.token;
+        const amt = typeof args.amount === "number" ? args.amount : parseFloat(args.amount);
+        if (!Number.isNaN(amt) && amt > 0) override.amount = amt;
+        if (args.env === "testnet" || args.env === "mainnet") override.env = args.env;
+        if (args.mode === "once" || args.mode === "recurring") override.mode = args.mode;
+        toolResult = await activateDesiredTrade(override);
+      } else if (fnName === "stop_desired_trade") {
+        toolResult = stopDesiredTrade();
       } else if (fnName === "bonk_pet") {
         if (!savedSettings.zkLoginSession && !savedSettings.agentSecretKey) {
           toolResult = tt("walletNotSynced");

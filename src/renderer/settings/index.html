@@ -361,6 +361,61 @@
               </div>
             </div>
 
+            <!-- 0. Desired Trade (owner-configured, pet auto-executes on activate) -->
+            <div class="form-stack" style="margin-top: 16px; max-width: 800px;">
+              <section class="settings-section" id="desired-trade-section">
+                <h3 class="section-title">🎯 Desired Trade · Pet tự thực hiện khi kích hoạt</h3>
+                <p class="section-desc" style="margin: 0 0 10px 0;">
+                  Cấu hình lệnh trade mong muốn. Khi bạn bấm <b>Kích hoạt</b> (hoặc bảo pet "thực hiện trade đã cấu hình"), pet sẽ tự thực thi đúng lệnh này on-chain bằng ví Agent.
+                </p>
+                <div class="form-grid-2">
+                  <div class="form-group">
+                    <label class="form-label">Hành động</label>
+                    <select id="desired-trade-action" class="select-md">
+                      <option value="buy">Buy (SUI → Token)</option>
+                      <option value="sell">Sell (Token → SUI)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Token (symbol hoặc 0x..::..::..)</label>
+                    <input type="text" id="desired-trade-token" class="input-md" value="USDC" placeholder="USDC, CETUS, hoặc coin type" />
+                  </div>
+                </div>
+                <div class="form-grid-2" style="margin-top: 8px;">
+                  <div class="form-group">
+                    <label class="form-label">Số lượng (input)</label>
+                    <input type="number" id="desired-trade-amount" class="input-md" value="1" min="0.0001" step="0.1" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Môi trường</label>
+                    <select id="desired-trade-env" class="select-md">
+                      <option value="testnet">Testnet (an toàn, proof)</option>
+                      <option value="mainnet">Mainnet (swap thật · Cetus)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-grid-2" style="margin-top: 8px;">
+                  <div class="form-group">
+                    <label class="form-label">Chế độ</label>
+                    <select id="desired-trade-mode" class="select-md">
+                      <option value="once">Một lần</option>
+                      <option value="recurring">Lặp lại theo chu kỳ</option>
+                    </select>
+                  </div>
+                  <div class="form-group" id="desired-trade-interval-group" style="display: none;">
+                    <label class="form-label">Chu kỳ (phút)</label>
+                    <input type="number" id="desired-trade-interval" class="input-md" value="60" min="1" step="1" />
+                  </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; margin-top: 14px;">
+                  <button id="desired-trade-activate" class="btn-primary" style="padding: 10px 20px; font-weight: 500; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; border: none;">Kích hoạt</button>
+                  <button id="desired-trade-stop" style="padding: 10px 18px; font-weight: 500; border-radius: 6px; background: var(--red, #ff5555); color: #fff; cursor: pointer; border: none;">Dừng</button>
+                  <span id="desired-trade-state" style="font-size: 12px; color: var(--text-muted);"></span>
+                </div>
+                <p class="callout" style="margin-top: 10px;">⚠️ Mainnet dùng tiền thật và sẽ swap đúng token/số lượng qua Cetus. Cần ví Agent (tạo ở tab Blockchain) có đủ số dư.</p>
+              </section>
+            </div>
+
             <div class="form-stack" style="margin-top: 16px; max-width: 800px;">
               <!-- 1. Signal Source & Exchange -->
               <section class="settings-section">

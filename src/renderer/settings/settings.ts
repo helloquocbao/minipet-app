@@ -7,6 +7,11 @@ import { SUI_CONFIG } from "../../shared/constants";
 let cachedPetList: PetListItem[] = [];
 let currentSettings: UserSettings | null = null;
 let lastSettingsJson = "";
+
+/** Strict Sui address check: 0x + exactly 64 hex chars. */
+function isValidSuiAddress(addr: unknown): addr is string {
+  return typeof addr === "string" && /^0x[0-9a-fA-F]{64}$/.test(addr);
+}
 const thumbnailCache = new Map<string, string>();
 let isInitialized = false;
 
@@ -667,7 +672,7 @@ function setupGlobalEventListeners() {
         showToast("Alias is required!");
         return;
       }
-      if (!address || !address.startsWith("0x") || address.length < 64) {
+      if (!isValidSuiAddress(address)) {
         showToast("Invalid Sui Address!");
         return;
       }
@@ -852,7 +857,7 @@ async function refreshSuiBalance() {
   }
 
   // Basic SUI address validation
-  if (!addr.startsWith("0x") || addr.length < 64) {
+  if (!isValidSuiAddress(addr)) {
     if (display) display.textContent = "Invalid Address";
     return;
   }
@@ -940,28 +945,45 @@ async function refreshSuiAssets() {
       return;
     }
 
-    container.innerHTML = data
-      .map((obj: any) => {
-        const fields = obj.data?.content?.fields || {};
-        const name = fields.name || obj.data?.display?.data?.name || "PetNFT";
-        const level = fields.level || "1";
-        const imgUrl = fields.image_url || fields.sprite_url || "";
+    // SECURITY: NFT name/level/image_url are attacker-settable on-chain data.
+    // Build via textContent/createElement — never innerHTML — and only allow
+    // http(s)/ipfs image URLs.
+    container.innerHTML = "";
+    for (const obj of data) {
+      const fields = obj.data?.content?.fields || {};
+      const name = String(fields.name || obj.data?.display?.data?.name || "PetNFT");
+      const level = String(fields.level ?? "1");
+      const imgUrl = String(fields.image_url || fields.sprite_url || "");
+      const safeImg = /^(https?:|ipfs:)/i.test(imgUrl) ? imgUrl : "";
 
-        const iconHtml = imgUrl
-          ? `<div class="asset-icon"><img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: contain; border-radius: 6px;" /></div>`
-          : `<div class="asset-icon">🐾</div>`;
+      const item = document.createElement("div");
+      item.className = "asset-item";
 
-        return `
-        <div class="asset-item">
-          ${iconHtml}
-          <div class="asset-info">
-            <span class="asset-name">${name} (Lv. ${level})</span>
-            <span class="asset-type">PetNFT</span>
-          </div>
-        </div>
-      `;
-      })
-      .join("");
+      const icon = document.createElement("div");
+      icon.className = "asset-icon";
+      if (safeImg) {
+        const img = document.createElement("img");
+        img.src = safeImg;
+        img.style.cssText =
+          "width: 100%; height: 100%; object-fit: contain; border-radius: 6px;";
+        icon.appendChild(img);
+      } else {
+        icon.textContent = "🐾";
+      }
+
+      const info = document.createElement("div");
+      info.className = "asset-info";
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "asset-name";
+      nameSpan.textContent = `${name} (Lv. ${level})`;
+      const typeSpan = document.createElement("span");
+      typeSpan.className = "asset-type";
+      typeSpan.textContent = "PetNFT";
+      info.append(nameSpan, typeSpan);
+
+      item.append(icon, info);
+      container.appendChild(item);
+    }
   } catch (err) {
     console.error("Failed to fetch assets:", err);
     container.innerHTML = `<div class="empty-state">Failed to load assets</div>`;
@@ -1010,29 +1032,41 @@ async function refreshSuiActivity() {
       return;
     }
 
-    container.innerHTML = data
-      .map((event: any) => {
-        const type = event.type.split("::").pop();
-        const time = new Date(Number(event.timestampMs)).toLocaleTimeString();
-        const isMe = event.sender === currentSettings?.suiAddress;
+    // SECURITY: event fields (type, parsedJson.text) are attacker-controlled
+    // on-chain data. Build the DOM with textContent — never innerHTML — to
+    // prevent XSS in this privileged settings webview.
+    container.innerHTML = "";
+    for (const event of data) {
+      const type = String(event.type ?? "").split("::").pop() || "Event";
+      const time = new Date(Number(event.timestampMs)).toLocaleTimeString();
+      const isMe = event.sender === currentSettings?.suiAddress;
 
-        let desc: string;
-        if (type === "MessageEvent")
-          desc = `Message: "${event.parsedJson.text}"`;
-        else if (type === "BonkEvent") desc = `Pet was bonked!`;
-        else desc = `Interaction with pet contract`;
+      let desc: string;
+      if (type === "MessageEvent")
+        desc = `Message: "${String(event.parsedJson?.text ?? "")}"`;
+      else if (type === "BonkEvent") desc = `Pet was bonked!`;
+      else desc = `Interaction with pet contract`;
 
-        return `
-        <div class="activity-item">
-          <div class="activity-header">
-            <span class="activity-type">${type}</span>
-            <span class="activity-time">${time}</span>
-          </div>
-          <p class="activity-desc">${desc} ${isMe ? "(You)" : ""}</p>
-        </div>
-      `;
-      })
-      .join("");
+      const item = document.createElement("div");
+      item.className = "activity-item";
+
+      const header = document.createElement("div");
+      header.className = "activity-header";
+      const typeSpan = document.createElement("span");
+      typeSpan.className = "activity-type";
+      typeSpan.textContent = type;
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "activity-time";
+      timeSpan.textContent = time;
+      header.append(typeSpan, timeSpan);
+
+      const descP = document.createElement("p");
+      descP.className = "activity-desc";
+      descP.textContent = `${desc} ${isMe ? "(You)" : ""}`;
+
+      item.append(header, descP);
+      container.appendChild(item);
+    }
   } catch (err) {
     console.error("Failed to fetch activity:", err);
     container.innerHTML = `<div class="empty-state">Failed to load activity</div>`;
@@ -1049,7 +1083,7 @@ async function refreshAgentBalance(): Promise<void> {
     )?.value.trim();
 
   if (!display) return;
-  if (!addr || !addr.startsWith("0x") || addr.length < 64) {
+  if (!isValidSuiAddress(addr)) {
     display.textContent = "0.000 SUI";
     return;
   }
@@ -1248,7 +1282,145 @@ let simPnl = 0.0;
 import { AgentTradeEngine, TradeLog } from "../blockchain/agent-trade";
 let agentTradeEngine: AgentTradeEngine | null = null;
 
+/**
+ * Wires the "Desired Trade" card: the owner configures an exact trade and the
+ * pet executes it on-chain when activated. Config persists to autoTrade.agent;
+ * activation broadcasts to the master overlay which runs DesiredTradeExecutor.
+ */
+function setupDesiredTradeCard(): void {
+  const actionEl = document.getElementById("desired-trade-action") as HTMLSelectElement | null;
+  const tokenEl = document.getElementById("desired-trade-token") as HTMLInputElement | null;
+  const amountEl = document.getElementById("desired-trade-amount") as HTMLInputElement | null;
+  const envEl = document.getElementById("desired-trade-env") as HTMLSelectElement | null;
+  const modeEl = document.getElementById("desired-trade-mode") as HTMLSelectElement | null;
+  const intervalEl = document.getElementById("desired-trade-interval") as HTMLInputElement | null;
+  const intervalGroup = document.getElementById("desired-trade-interval-group");
+  const activateBtn = document.getElementById("desired-trade-activate");
+  const stopBtn = document.getElementById("desired-trade-stop");
+  const stateEl = document.getElementById("desired-trade-state");
+  if (!actionEl || !tokenEl || !amountEl || !envEl || !modeEl || !intervalEl || !activateBtn || !stopBtn) {
+    return;
+  }
+
+  const isVi = () => (currentSettings?.language || "en") === "vi";
+
+  // Hydrate from saved config (agent wallet).
+  const saved: any = currentSettings?.autoTrade?.agent || {};
+  if (saved.action === "buy" || saved.action === "sell") actionEl.value = saved.action;
+  if (typeof saved.token === "string" && saved.token) tokenEl.value = saved.token;
+  if (typeof saved.amount === "number") amountEl.value = String(saved.amount);
+  if (saved.env === "testnet" || saved.env === "mainnet") envEl.value = saved.env;
+  if (saved.mode === "once" || saved.mode === "recurring") modeEl.value = saved.mode;
+  if (typeof saved.interval_minutes === "number") intervalEl.value = String(saved.interval_minutes);
+
+  const syncIntervalVisibility = () => {
+    if (intervalGroup) intervalGroup.style.display = modeEl.value === "recurring" ? "" : "none";
+  };
+  syncIntervalVisibility();
+  modeEl.addEventListener("change", syncIntervalVisibility);
+
+  const readConfig = () => {
+    const action = actionEl.value === "sell" ? "sell" : "buy";
+    const token = (tokenEl.value || "SUI").trim();
+    const amount = parseFloat(amountEl.value);
+    const env = envEl.value === "mainnet" ? "mainnet" : "testnet";
+    const mode = modeEl.value === "recurring" ? "recurring" : "once";
+    const interval = Math.max(1, parseInt(intervalEl.value) || 60);
+    return { action, token, amount, env, mode, interval };
+  };
+
+  // Two-click safeguard for real-money mainnet trades (no native alert/confirm).
+  const defaultBtnText = activateBtn.textContent || "Kích hoạt";
+  let mainnetArmed = false;
+  let armTimer: ReturnType<typeof setTimeout> | null = null;
+  const disarmMainnet = () => {
+    mainnetArmed = false;
+    activateBtn.textContent = defaultBtnText;
+    if (armTimer) {
+      clearTimeout(armTimer);
+      armTimer = null;
+    }
+  };
+
+  activateBtn.addEventListener("click", () => {
+    void (async () => {
+      const c = readConfig();
+      if (!c.token || Number.isNaN(c.amount) || c.amount <= 0) {
+        showToast(isVi() ? "Nhập token và số lượng hợp lệ." : "Enter a valid token and amount.", "error");
+        return;
+      }
+      if (!currentSettings?.agentSecretKey) {
+        showToast(
+          isVi()
+            ? "Chưa có ví Agent. Tạo ví Agent ở tab Blockchain trước."
+            : "No Agent wallet. Generate one in the Blockchain tab first.",
+          "error",
+        );
+        return;
+      }
+      if (c.env === "mainnet" && !mainnetArmed) {
+        // First click on mainnet: arm and warn; require a second click to confirm.
+        mainnetArmed = true;
+        activateBtn.textContent = isVi() ? "Bấm lần nữa để xác nhận Mainnet" : "Click again to confirm Mainnet";
+        if (stateEl) {
+          stateEl.textContent = isVi()
+            ? `⚠️ Mainnet TIỀN THẬT: ${c.action} ${c.amount} ${c.token} qua Cetus.`
+            : `⚠️ Mainnet REAL funds: ${c.action} ${c.amount} ${c.token} via Cetus.`;
+        }
+        armTimer = setTimeout(disarmMainnet, 6000);
+        return;
+      }
+      disarmMainnet();
+
+      const api = (window as any).electronAPI;
+      const autoTrade: Record<string, any> = { ...(currentSettings?.autoTrade || {}) };
+      autoTrade.agent = {
+        ...(autoTrade.agent || {}),
+        enabled: true,
+        action: c.action,
+        token: c.token,
+        amount: c.amount,
+        env: c.env,
+        mode: c.mode,
+        interval_minutes: c.interval,
+      };
+      await api.updateSettings({ autoTrade });
+      await api.broadcastPetEvent("trade:execute-desired", {
+        wallet: "agent",
+        action: c.action,
+        token: c.token,
+        amount: c.amount,
+        env: c.env,
+        mode: c.mode,
+        intervalMinutes: c.interval,
+      });
+
+      if (stateEl) {
+        const tail = c.mode === "recurring" ? (isVi() ? `, mỗi ${c.interval} phút` : `, every ${c.interval}m`) : "";
+        stateEl.textContent = isVi()
+          ? `✅ Đã kích hoạt: ${c.action} ${c.amount} ${c.token} · ${c.env}${tail}`
+          : `✅ Activated: ${c.action} ${c.amount} ${c.token} · ${c.env}${tail}`;
+      }
+      showToast(isVi() ? "Pet đang thực hiện trade!" : "Pet is executing the trade!", "success");
+    })();
+  });
+
+  stopBtn.addEventListener("click", () => {
+    void (async () => {
+      const api = (window as any).electronAPI;
+      const autoTrade: Record<string, any> = { ...(currentSettings?.autoTrade || {}) };
+      if (autoTrade.agent) autoTrade.agent = { ...autoTrade.agent, enabled: false };
+      await api.updateSettings({ autoTrade });
+      await api.broadcastPetEvent("trade:stop-desired", { wallet: "agent" });
+      if (stateEl) stateEl.textContent = isVi() ? "🛑 Đã dừng." : "🛑 Stopped.";
+      showToast(isVi() ? "Đã dừng trade." : "Trade stopped.", "success");
+    })();
+  });
+}
+
 function setupAutoTradeTab(): void {
+  setupDesiredTradeCard();
+
   const aggrRange = document.getElementById(
     "aggressiveness-range",
   ) as HTMLInputElement;

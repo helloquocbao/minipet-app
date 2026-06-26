@@ -23,8 +23,11 @@ export class AutoTradeSimulator {
    *  - true : tick mỗi 3s, và 1 "phút" cấu hình được quy đổi thành 2s thực.
    *           (vd: interval_minutes=1 → ~2s, interval_minutes=30 → ~60s)
    *  - false: tick mỗi 20s, 1 phút = 60s thực (hành vi production).
+   *
+   * Bật theo build: chỉ DEMO khi chạy dev, production luôn dùng nhịp thật.
    */
-  private static readonly DEMO_MODE = true;
+  private static readonly DEMO_MODE =
+    (import.meta as any)?.env?.DEV === true;
 
   /** How often the loop wakes up to check whether a trade is due (ms). */
   private static readonly TICK_MS = AutoTradeSimulator.DEMO_MODE

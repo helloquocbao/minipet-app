@@ -23,6 +23,9 @@ export class SuiMonitor {
   // --- Staggered Poll Counters ---
   private pollTick: number = 0;
 
+  /** Unlisten handle for the settings-update subscription. */
+  private settingsUnlisten: (() => void) | null = null;
+
   constructor() {
     void this.init().catch(console.error);
   }
@@ -32,10 +35,20 @@ export class SuiMonitor {
     const settings = await api.getSettings();
     await this.updateConfig(settings);
 
-    // Listen for settings updates
-    api.onSettingsUpdate((data: any) => {
+    // Listen for settings updates (store unlisten so destroy() can clean up).
+    this.settingsUnlisten = await api.onSettingsUpdate((data: any) => {
       void this.updateConfig(data.settings).catch(console.error);
     });
+  }
+
+  /** Full teardown: remove the settings listener AND stop polling. Call this
+   *  (not stopPolling) when retiring the monitor, e.g. on master demotion. */
+  public destroy() {
+    if (this.settingsUnlisten) {
+      this.settingsUnlisten();
+      this.settingsUnlisten = null;
+    }
+    this.stopPolling();
   }
 
   private async updateConfig(settings: any) {
